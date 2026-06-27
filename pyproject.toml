@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dspark-mlx"
+version = "0.0.1"
+description = "DSpark self-speculative decoding for Apple Silicon (MLX)"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [{name = "popfido"}]
+dependencies = [
+    "mlx>=0.31.0",
+    "mlx-lm>=0.31.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "torch", "numpy"]
+
+[project.urls]
+Homepage = "https://github.com/popfido/dspark-mlx"
+
+[tool.setuptools.packages.find]
+include = ["dspark_mlx*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
