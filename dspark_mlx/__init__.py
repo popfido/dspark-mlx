@@ -5,11 +5,13 @@
 __version__ = "0.0.1"
 
 from .adapter import BaseModelAdapter, BlockOut, StepOut
+from .arch.backbone import DraftArch, DraftBackbone
 from .events import SummaryEvent, TokenEvent
 from .generate import generate
 from .loading import is_dspark_checkpoint, load_drafter, map_checkpoint_key
 from .model.config import DSparkArgs
 from .model.drafter import DSparkDrafter
+from .registry import ARCH_REGISTRY, resolve_arch
 from .verify import AcceptResult, greedy_accept, speculative_sample_accept
 
 __all__ = [
@@ -18,6 +20,10 @@ __all__ = [
     "StepOut",
     "DSparkArgs",
     "DSparkDrafter",
+    "DraftArch",
+    "DraftBackbone",
+    "resolve_arch",
+    "ARCH_REGISTRY",
     "generate",
     "greedy_accept",
     "speculative_sample_accept",
