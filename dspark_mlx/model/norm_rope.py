@@ -20,11 +20,14 @@ import mlx.nn as nn
 
 
 class RMSNorm(nn.Module):
-    """fp32 RMSNorm matching ``inference/model.py::RMSNorm`` (weight stored fp32)."""
+    """fp32 RMSNorm (weight stored fp32). ``with_scale=False`` is a weightless variant
+    (e.g. Gemma4's v_norm) — pure normalization, no learnable weight."""
 
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, dim: int, eps: float = 1e-6, with_scale: bool = True):
         super().__init__()
-        self.weight = mx.ones((dim,), dtype=mx.float32)
+        self.with_scale = with_scale
+        if with_scale:
+            self.weight = mx.ones((dim,), dtype=mx.float32)
         self.eps = eps
 
     def __call__(self, x: mx.array) -> mx.array:
@@ -32,7 +35,9 @@ class RMSNorm(nn.Module):
         xf = x.astype(mx.float32)
         var = mx.mean(xf * xf, axis=-1, keepdims=True)
         xf = xf * mx.rsqrt(var + self.eps)
-        return (self.weight * xf).astype(dtype)
+        if self.with_scale:
+            xf = self.weight * xf
+        return xf.astype(dtype)
 
 
 def precompute_rope(dim: int, seqlen: int, base: float = 10000.0) -> Tuple[mx.array, mx.array]:
