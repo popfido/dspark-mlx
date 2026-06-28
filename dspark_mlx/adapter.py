@@ -41,8 +41,9 @@ class StepOut:
 class BlockOut:
     """Output of the base verify forward over a K-token draft block."""
 
-    per_pos_logits: mx.array   # [b, K, V] base distributions p_2 .. p_{K+1}
-    main_hidden_last: mx.array  # [b, dim * len(target_layer_ids)] at the last verified position
+    per_pos_logits: mx.array       # [b, K, V] base distributions p_2 .. p_{K+1}
+    per_pos_main_hidden: mx.array  # [b, K, D] main hidden at each verified position
+    main_hidden_last: mx.array     # [b, D] convenience alias for the last verified position
 
 
 @runtime_checkable

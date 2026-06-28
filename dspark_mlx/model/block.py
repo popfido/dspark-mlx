@@ -93,6 +93,10 @@ class DSparkBlock(nn.Module):
         h = self.ffn(self.ffn_norm(h), input_ids)
         return hc_post(h, residual, post, comb)
 
+    def advance(self, main_x: mx.array, position: int) -> None:
+        """Slide this block's window over one committed token (no draft compute)."""
+        self.attn.advance_window(main_x, position)
+
     def forward_embed(self, main_hidden: mx.array, input_ids: mx.array, embed: nn.Module):
         """Stage-0 only: project main hidden + embed the draft block (anchor + noise)."""
         main_x = self.main_norm(self.main_proj(main_hidden))

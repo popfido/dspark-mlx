@@ -39,3 +39,15 @@ class DSparkDrafter(nn.Module):
         if start_pos == 0:
             return None
         return self.blocks[-1].forward_head(h, input_ids, self.head)
+
+    def advance(self, main_hidden: mx.array, position: int) -> None:
+        """Slide every block's window over one committed token at ``position``.
+
+        ``main_hidden`` is the base hidden ([b, D] or [b, 1, D]); projected once via the
+        stage-0 main_proj/main_norm and fed to each block. The generate loop calls this for
+        each token accepted within a block (forward_spec only advances the anchor).
+        """
+        mh = main_hidden.reshape(main_hidden.shape[0], -1)
+        main_x = self.blocks[0].main_norm(self.blocks[0].main_proj(mh))
+        for blk in self.blocks:
+            blk.advance(main_x, position)

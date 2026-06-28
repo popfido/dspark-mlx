@@ -127,3 +127,16 @@ class DSparkAttention(nn.Module):
         # out[..,g,r] = sum_d o[..,g,d] * wo_a[g,r,d]
         o = mx.sum(o[..., None, :] * wo_a[None, None, :, :, :], axis=-1)
         return self.wo_b(o.reshape(b, block_size, self.n_groups * self.o_lora_rank))
+
+    def advance_window(self, main_x: mx.array, position: int) -> None:
+        """Append one committed token's main KV to the window without drafting.
+
+        Used by the generate loop to slide the window over tokens accepted in a block
+        (forward_spec only adds the anchor). ``main_x`` is the projected main hidden
+        ([b, dim]); this mirrors the decode path's window update for a single position.
+        """
+        rd = self.rope_head_dim
+        main_kv = self.kv_norm(self.wkv(main_x))[:, None, :]  # [b, 1, head_dim]
+        main_kv = _rope_last(main_kv, self._cos[position : position + 1],
+                             self._sin[position : position + 1], rd)
+        self.cache.update(position, main_kv[:, 0])
