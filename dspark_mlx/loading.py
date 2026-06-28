@@ -58,18 +58,22 @@ def drafter_path_to_checkpoint_key(path: str) -> str:
     return f"mtp.{m.group(1)}.{m.group(2)}" if m else path
 
 
-def load_drafter(drafter: DSparkDrafter, weights: Dict[str, mx.array]) -> List[str]:
+def load_drafter(
+    drafter, weights: Dict[str, mx.array], key_map=map_checkpoint_key
+) -> List[str]:
     """Assign already-dequantized weights (keyed by checkpoint key) into ``drafter``.
 
-    ``.scale`` entries are skipped (consumed at dequant time); base-model keys are skipped
-    and returned. Rope tables are computed (absent from checkpoints) and left untouched.
+    ``key_map`` translates each checkpoint key to a drafter param path (per-architecture:
+    ``mtp.*`` for DeepSeek-V4, ``layers.*`` for Qwen3/Gemma4). ``.scale`` entries are skipped
+    (consumed at dequant time); base-model keys are skipped and returned. Rope tables are
+    computed (absent from checkpoints) and left untouched.
     """
     params: Dict[str, mx.array] = {}
     skipped: List[str] = []
     for key, value in weights.items():
         if key.endswith(".scale"):
             continue
-        path = map_checkpoint_key(key)
+        path = key_map(key)
         if path is None:
             skipped.append(key)
             continue

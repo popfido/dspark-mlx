@@ -68,8 +68,8 @@ def _rotate_half(x: mx.array) -> mx.array:
 
 def _apply_rope(x: mx.array, cos: mx.array, sin: mx.array) -> mx.array:
     """x: [b, seq, heads, hd]; cos/sin: [seq, hd] (NeoX half-split convention)."""
-    cos = cos[None, :, None, :]
-    sin = sin[None, :, None, :]
+    cos = cos[None, :, None, :].astype(x.dtype)
+    sin = sin[None, :, None, :].astype(x.dtype)
     return x * cos + _rotate_half(x) * sin
 
 
@@ -160,3 +160,92 @@ class Qwen3Backbone(nn.Module):
         for layer in self.layers:
             h = layer(h, target_ctx, cos_full, sin_full)
         return self.norm(h)
+
+
+# --- drafter (DraftBackbone) + checkpoint mapping + registry descriptor ---
+
+import re as _re  # noqa: E402
+
+from ..model.heads import DSparkConfidenceHead, DSparkMarkovHead  # noqa: E402
+from ..recipe import draft_block_decode  # noqa: E402
+from .backbone import DraftArch  # noqa: E402
+
+_QWEN3_LAYER_RE = _re.compile(r"layers\.(\d+)\.(.+)$")
+
+
+class Qwen3DSparkDrafter(nn.Module):
+    """Qwen3 DSpark drafter conforming to DraftBackbone (forward_spec / advance).
+
+    Holds the shared embed/lm_head, the Qwen3 backbone, and the Markov + confidence heads.
+    Context is the full accepted sequence's projected target hidden, accumulated across the
+    decode (no windowing); the draft block cross-attends to it. (Append-based growth is O(ctx)
+    per step — a preallocated buffer is a perf follow-up.)
+    """
+
+    def __init__(self, args: Qwen3DSparkArgs, max_seq_len: int = 8192):
+        super().__init__()
+        self.args = args
+        self.block_size = args.block_size
+        self.temperature = args.temperature
+        self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
+        self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
+        self.backbone = Qwen3Backbone(args)
+        self.markov_head = DSparkMarkovHead(args.vocab_size, args.markov_rank)
+        self.confidence_head = DSparkConfidenceHead(args.hidden_size + args.markov_rank, bias=True)
+        self.reset()
+
+    def reset(self) -> None:
+        self._ctx = None        # [b, ctx_len, hidden] projected target context
+        self._next_pos = 0
+
+    def _project_one(self, main_hidden: mx.array) -> mx.array:
+        return self.backbone.project_context(main_hidden.reshape(main_hidden.shape[0], 1, -1))
+
+    def forward_spec(self, input_ids: mx.array, main_hidden: mx.array, start_pos: int = 0):
+        if start_pos == 0:
+            # prefill: ingest 0..L-2; the last prompt token becomes the first anchor.
+            full = self.backbone.project_context(main_hidden)
+            self._ctx = full[:, :-1]
+            self._next_pos = full.shape[1] - 1
+            return None
+
+        # decode: append the anchor's projected hidden, then draft the block.
+        self._ctx = mx.concatenate([self._ctx, self._project_one(main_hidden)], axis=1)
+        self._next_pos = start_pos + 1
+        b = input_ids.shape[0]
+        anchor = input_ids.astype(mx.int32).reshape(b, 1)
+        noise = mx.full((b, self.block_size - 1), self.args.mask_token_id, dtype=mx.int32)
+        noise_embed = self.embed_tokens(mx.concatenate([anchor, noise], axis=1))
+
+        full_pos = mx.arange(self._ctx.shape[1] + self.block_size)  # contiguous 0..ctx+block-1
+        cos, sin = rope_tables(full_pos, self.args.head_dim, self.args.rope_theta)
+        block_hidden = self.backbone(noise_embed, self._ctx, cos, sin)
+        logits = self.lm_head(block_hidden.astype(mx.float32))
+        return draft_block_decode(
+            logits, block_hidden, input_ids, self.markov_head, self.confidence_head,
+            self.block_size, self.temperature,
+        )
+
+    def advance(self, main_hidden: mx.array, position: int) -> None:
+        self._ctx = mx.concatenate([self._ctx, self._project_one(main_hidden)], axis=1)
+        self._next_pos = position + 1
+
+
+def qwen3_key_map(key):
+    if key in ("embed_tokens.weight", "lm_head.weight"):
+        return key
+    if key in ("fc.weight", "hidden_norm.weight", "norm.weight"):
+        return f"backbone.{key}"
+    if key.startswith("markov_head.") or key.startswith("confidence_head."):
+        return key
+    m = _QWEN3_LAYER_RE.match(key)
+    if m:
+        return f"backbone.layers.{m.group(1)}.{m.group(2)}"
+    return None
+
+
+def build(config, *, max_seq_len: int = 8192) -> Qwen3DSparkDrafter:
+    return Qwen3DSparkDrafter(Qwen3DSparkArgs.from_dict(config), max_seq_len=max_seq_len)
+
+
+QWEN3 = DraftArch(name="qwen3", model_types=("qwen3",), build=build, key_map=qwen3_key_map)

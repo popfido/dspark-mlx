@@ -39,9 +39,10 @@ class DSparkConfidenceHead(nn.Module):
     verify path; it gates adaptive draft length in the (later) lossy mode.
     """
 
-    def __init__(self, input_dim: int):
+    def __init__(self, input_dim: int, bias: bool = False):
         super().__init__()
-        self.proj = nn.Linear(input_dim, 1, bias=False)
+        # DeepSeek-V4 uses a bias-free projection; Qwen3/Gemma4 DSpark add a bias.
+        self.proj = nn.Linear(input_dim, 1, bias=bias)
 
     def __call__(self, hidden: mx.array, markov_embed: mx.array) -> mx.array:
         x = mx.concatenate([hidden, markov_embed], axis=-1)

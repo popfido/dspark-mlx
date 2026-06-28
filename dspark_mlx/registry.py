@@ -15,9 +15,11 @@ from typing import Any, List
 
 from .arch.backbone import DraftArch, config_model_type
 from .arch.deepseek_v4 import DEEPSEEK_V4
+from .arch.qwen3 import QWEN3
 
 ARCH_REGISTRY: List[DraftArch] = [
     DEEPSEEK_V4,
+    QWEN3,
 ]
 
 
