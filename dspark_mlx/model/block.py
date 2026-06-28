@@ -16,21 +16,13 @@ from __future__ import annotations
 import mlx.core as mx
 import mlx.nn as nn
 
+from ..recipe import draft_block_decode, sample  # noqa: F401  (sample re-exported)
 from .attention import DSparkAttention
 from .config import DSparkArgs
 from .heads import DSparkConfidenceHead, DSparkMarkovHead
 from .hyper import hc_head, hc_post, hc_pre
 from .moe import MoE
 from .norm_rope import RMSNorm
-
-
-def sample(logits: mx.array, temperature: float) -> mx.array:
-    """Match the reference sampler: argmax at temperature 0, else Gumbel-max."""
-    if temperature == 0:
-        return mx.argmax(logits, axis=-1).astype(mx.int32)
-    probs = mx.softmax(logits.astype(mx.float32) / max(temperature, 1e-5), axis=-1)
-    g = mx.random.uniform(shape=probs.shape).astype(mx.float32)
-    return mx.argmax(probs / (-mx.log(g + 1e-20)), axis=-1).astype(mx.int32)
 
 
 class DSparkBlock(nn.Module):
@@ -118,18 +110,7 @@ class DSparkBlock(nn.Module):
         """
         x = hc_head(x, self.hc_head_fn, self.hc_head_scale, self.hc_head_base, self.norm_eps, self.hc_eps)
         logits = head(self.norm(x).astype(mx.float32))  # [b, block_size, vocab]
-
-        prev = input_ids.astype(mx.int32)  # output_ids[:, 0] = anchor
-        out_ids, biased_cols, markov_embeds = [prev], [], []
-        for i in range(self.block_size):
-            bias, membed = self.markov_head(prev)        # [b, vocab], [b, rank]
-            li = logits[:, i] + bias
-            biased_cols.append(li)
-            markov_embeds.append(membed)
-            prev = sample(li, self.temperature)
-            out_ids.append(prev)
-        output_ids = mx.stack(out_ids, axis=1)           # [b, block_size + 1]
-        logits_out = mx.stack(biased_cols, axis=1)       # [b, block_size, vocab]
-        markov_embed = mx.stack(markov_embeds, axis=1)   # [b, block_size, rank]
-        confidence = self.confidence_head(x, markov_embed)  # [b, block_size]
-        return output_ids, logits_out, confidence
+        return draft_block_decode(
+            logits, x, input_ids, self.markov_head, self.confidence_head,
+            self.block_size, self.temperature,
+        )
