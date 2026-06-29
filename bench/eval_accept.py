@@ -71,11 +71,13 @@ def main() -> None:
     ap.add_argument("--max-new-tokens", type=int, default=256)
     ap.add_argument("--chat", action="store_true")
     ap.add_argument("--no-think", action="store_true", help="disable Qwen3 thinking mode")
+    ap.add_argument("--quant-draft", type=int, default=0, choices=[0, 8, 4],
+                    help="quantize the draft to N bits (8 = acceptance-lossless)")
     args = ap.parse_args()
 
     print(f"loading {args.arch}/{args.precision} + draft ...", flush=True)
     model, tokenizer, adapter = _load_base(args.arch, args.precision)
-    drafter = _load_drafter(args.arch)
+    drafter = _load_drafter(args.arch, args.quant_draft)
     eos = getattr(tokenizer, "eos_token_id", None)
     block = drafter.block_size
     prompts = DATASETS[args.dataset](args.n)

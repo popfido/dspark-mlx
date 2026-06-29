@@ -11,6 +11,7 @@ from .generate import generate
 from .loading import is_dspark_checkpoint, load_drafter, map_checkpoint_key
 from .model.config import DSparkArgs
 from .model.drafter import DSparkDrafter
+from .quant import quantize_drafter
 from .registry import ARCH_REGISTRY, resolve_arch
 from .verify import AcceptResult, greedy_accept, speculative_sample_accept
 
@@ -33,4 +34,5 @@ __all__ = [
     "load_drafter",
     "map_checkpoint_key",
     "is_dspark_checkpoint",
+    "quantize_drafter",
 ]

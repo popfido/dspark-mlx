@@ -45,6 +45,20 @@ def test_eager_confidence_gating_stays_lossless() -> None:
     assert tokens == _base_greedy(adapter, prompt, 24)
 
 
+def test_eager_loop_lossless_with_quantized_draft() -> None:
+    """A quantized drafter only changes draft quality (acceptance), never the output."""
+    from dspark_mlx.quant import quantize_drafter
+
+    mx.random.seed(1234)
+    base = _tiny_qwen3_base()
+    drafter = quantize_drafter(_tiny_drafter(), bits=8, group_size=64)
+    adapter = MlxLmHostAdapter(base, target_layer_ids=TIDS)
+    prompt = np.random.default_rng(0).integers(0, VOCAB, size=(1, 7)).astype(np.int32)
+    tokens = [e.token for e in generate_eager(adapter, drafter, prompt, max_new_tokens=24)
+              if isinstance(e, TokenEvent)]
+    assert tokens == _base_greedy(adapter, prompt, 24)
+
+
 def test_eager_matches_legacy_token_stream() -> None:
     """Eager and legacy loops are both lossless, so they emit the same tokens (b=1, greedy)."""
     from dspark_mlx.generate import generate

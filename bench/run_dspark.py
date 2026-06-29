@@ -112,13 +112,16 @@ def _load_base(arch: str, precision: str):
     return model, tokenizer, adapter
 
 
-def _load_drafter(arch: str):
+def _load_drafter(arch: str, quant_draft: int = 0):
     config = json.load(open(PRESETS[arch]["config"]))
     drafter = resolve_arch(config).build(config, max_seq_len=8192)
     weights = mx.load(PRESETS[arch]["ckpt"])
     skipped = load_drafter(drafter, weights, key_map=resolve_arch(config).key_map)
     if skipped:
         raise SystemExit(f"unmapped draft keys: {skipped[:8]} ...")
+    if quant_draft:
+        from dspark_mlx.quant import quantize_drafter
+        quantize_drafter(drafter, bits=quant_draft)
     mx.eval(drafter.parameters())
     return drafter
 
@@ -151,11 +154,13 @@ def main() -> None:
                     help="confidence-gated draft length (sigmoid threshold; 0 = full block)")
     ap.add_argument("--no-think", action="store_true",
                     help="disable thinking mode in the chat template (Qwen3) -- higher acceptance")
+    ap.add_argument("--quant-draft", type=int, default=0, choices=[0, 8, 4],
+                    help="quantize the draft to N bits (8 = acceptance-lossless, cheaper draft)")
     args = ap.parse_args()
 
     print(f"loading {args.arch} base ({args.precision}) + draft ...", flush=True)
     model, tokenizer, adapter = _load_base(args.arch, args.precision)
-    drafter = _load_drafter(args.arch)
+    drafter = _load_drafter(args.arch, args.quant_draft)
     if args.chat and getattr(tokenizer, "chat_template", None):
         kw = {"enable_thinking": False} if args.no_think else {}
         prompt_ids = tokenizer.apply_chat_template(
@@ -183,7 +188,8 @@ def main() -> None:
     mean_acc = ds.n_accepted / ds.n_blocks if ds.n_blocks else 0.0
     acc_rate = ds.n_accepted / ds.n_drafted if ds.n_drafted else 0.0
 
-    print(f"\n=== {args.arch} / {args.precision} | loop={args.loop} | block_size={drafter.block_size} | "
+    draft_tag = f" | draft=q{args.quant_draft}" if args.quant_draft else ""
+    print(f"\n=== {args.arch} / {args.precision}{draft_tag} | loop={args.loop} | block_size={drafter.block_size} | "
           f"prompt={len(prompt_ids)} tok, generated={len(ds.tokens)} ===")
     print(f"  lossless:                    {note}")
     print(f"  mean accepted / block:       {mean_acc:.2f} / {drafter.block_size}")
