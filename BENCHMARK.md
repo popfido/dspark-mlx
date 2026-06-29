@@ -109,7 +109,12 @@ Tokens per target-forward (the hardware-independent efficiency metric): DSpark *
 **6.19** (off) vs DFlash **2.85** (on). **DSpark wins in every quadrant**; at each method's best
 (thinking-off + quantized draft) DSpark **2.55×** vs DFlash **1.57×** (~1.6×). Consistent with
 the paper ordering (DSpark > DFlash > Eagle3), though our gap exceeds the paper's +16–18%
-accepted-length margin. Caveats:
+accepted-length margin.
+
+On **Gemma4-12B-it**, DSpark reaches **2.35× (q8 draft) / 1.93× (bf16)** (tokens/cycle 5.97), but
+the head-to-head can't be run: **dflash-mlx doesn't support the `gemma4_unified` multimodal base**
+(its target backends are `gemma4_text` + `qwen_gdn`), whereas DSpark's mlx-vlm host loads the
+text tower of the unified checkpoint. So DSpark has broader base coverage here. Caveats:
 
 - **Hardware: pre-M5 Apple GPU** (NAX matrix kernels unavailable → steel fallback). DFlash's
   custom `verify_qmm` Metal kernels target newer chips, so **DFlash would likely close the gap on

@@ -4,22 +4,38 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dspark-mlx"
-version = "0.0.1"
-description = "DSpark self-speculative decoding for Apple Silicon (MLX)"
+version = "0.1.0"
+description = "DSpark self-speculative decoding for Apple Silicon (MLX) — lossless, target-agnostic"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 authors = [{name = "popfido"}]
+keywords = ["mlx", "apple-silicon", "speculative-decoding", "dspark", "llm-inference", "deepseek", "qwen3", "gemma"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Operating System :: MacOS",
+]
 dependencies = [
     "mlx>=0.31.0",
     "mlx-lm>=0.31.0",
+    "numpy",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "torch", "numpy"]
+# Gemma bases are multimodal (gemma4_unified); the host loads the text tower via mlx-vlm.
+gemma = ["mlx-vlm>=0.6.0"]
+# eval_accept / the `dspark eval` subcommand pull GSM8K / MBPP from the HF hub.
+bench = ["datasets"]
+dev = ["pytest", "torch", "numpy", "datasets", "mlx-vlm>=0.6.0"]
 
 [project.urls]
 Homepage = "https://github.com/popfido/dspark-mlx"
+Issues = "https://github.com/popfido/dspark-mlx/issues"
+
+[project.scripts]
+dspark = "dspark_mlx.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["dspark_mlx*"]

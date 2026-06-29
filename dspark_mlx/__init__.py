@@ -8,7 +8,9 @@ from .adapter import BaseModelAdapter, BlockOut, StepOut
 from .arch.backbone import DraftArch, DraftBackbone
 from .events import SummaryEvent, TokenEvent
 from .generate import generate
+from .loader import KNOWN_MODELS, load_draft, load_host, resolve_model
 from .loading import is_dspark_checkpoint, load_drafter, map_checkpoint_key
+from .loop import generate_eager
 from .model.config import DSparkArgs
 from .model.drafter import DSparkDrafter
 from .quant import quantize_drafter
@@ -26,6 +28,11 @@ __all__ = [
     "resolve_arch",
     "ARCH_REGISTRY",
     "generate",
+    "generate_eager",
+    "load_draft",
+    "load_host",
+    "resolve_model",
+    "KNOWN_MODELS",
     "greedy_accept",
     "speculative_sample_accept",
     "AcceptResult",
