@@ -195,8 +195,9 @@ class Qwen3DSparkDrafter(nn.Module):
         self.reset()
 
     def reset(self) -> None:
-        self._ctx = None        # [b, ctx_len, hidden] projected target context
+        self._ctx = None        # [b, ctx_len, hidden] projected target context (legacy forward_spec path)
         self._next_pos = 0
+        self._ctx_raw = None    # [b, ctx_len, fc_in] raw committed target hiddens (eager path)
 
     def _project_one(self, main_hidden: mx.array) -> mx.array:
         return self.backbone.project_context(main_hidden.reshape(main_hidden.shape[0], 1, -1))
@@ -229,6 +230,38 @@ class Qwen3DSparkDrafter(nn.Module):
     def advance(self, main_hidden: mx.array, position: int) -> None:
         self._ctx = mx.concatenate([self._ctx, self._project_one(main_hidden)], axis=1)
         self._next_pos = position + 1
+
+    # --- reference-matched eager interface (one base forward per cycle) ---
+    #
+    # The context holds the raw target hiddens of *committed* positions only; the live anchor
+    # is never in the context -- it is the block's query at its own absolute position `start`
+    # (DeepSpec: noise block at position_ids[start : start+block_size]). This is the fix for
+    # the legacy forward_spec path, which wrongly appended the anchor hidden into the context
+    # and shifted the block to start+1.
+
+    def extend_context(self, new_hiddens: mx.array) -> None:
+        """Append raw target hiddens [b, n, fc_in] of newly committed positions."""
+        self._ctx_raw = (
+            new_hiddens if self._ctx_raw is None
+            else mx.concatenate([self._ctx_raw, new_hiddens], axis=1)
+        )
+
+    def draft(self, anchor_token: mx.array):
+        """Draft a block from the committed context; anchor is the query at position `start`."""
+        b = anchor_token.shape[0]
+        start = 0 if self._ctx_raw is None else self._ctx_raw.shape[1]
+        ctx = self.backbone.project_context(self._ctx_raw)
+        anchor = anchor_token.astype(mx.int32).reshape(b, 1)
+        noise = mx.full((b, self.block_size - 1), self.args.mask_token_id, dtype=mx.int32)
+        noise_embed = self.embed_tokens(mx.concatenate([anchor, noise], axis=1))
+        full_pos = mx.arange(start + self.block_size)  # ctx [0..start-1] ‖ block [start..]
+        cos, sin = rope_tables(full_pos, self.args.head_dim, self.args.rope_theta)
+        block_hidden = self.backbone(noise_embed, ctx, cos, sin)
+        logits = self.lm_head(block_hidden.astype(mx.float32))
+        return draft_block_decode(
+            logits, block_hidden, anchor_token, self.markov_head, self.confidence_head,
+            self.block_size, self.temperature,
+        )
 
 
 def qwen3_key_map(key):
