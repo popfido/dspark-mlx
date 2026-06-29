@@ -29,6 +29,11 @@ from .model.drafter import DSparkDrafter
 from .verify import greedy_accept
 
 
+def _f32(a: mx.array) -> np.ndarray:
+    """Base logits may be bf16 (numpy has no bf16 dtype); cast before crossing to numpy."""
+    return np.array(a.astype(mx.float32))
+
+
 def generate(
     adapter: BaseModelAdapter,
     drafter: DSparkDrafter,
@@ -41,7 +46,7 @@ def generate(
 
     step = adapter.prefill(mx.array(prompt.astype(np.int32)))
     main_hidden = step.main_hidden                       # [1, prompt_len, D]
-    p1 = np.array(step.logits)[0]                        # [V]
+    p1 = _f32(step.logits)[0]                            # [V]
     anchor = int(prompt[0, -1])
     drafter.forward_spec(mx.array([anchor], dtype=mx.int32), main_hidden, start_pos=0)
     main_hidden = main_hidden[:, -1:].reshape(1, 1, -1)  # h_{t}, t = prompt_len - 1
@@ -52,7 +57,7 @@ def generate(
         out = drafter.forward_spec(mx.array([anchor], dtype=mx.int32), main_hidden, start_pos=t)
         d = np.array(out[0])[0, 1:]                       # [K] drafts for x_{t+1}..x_{t+K}
         block = adapter.verify_forward(mx.array(d[None, :].astype(np.int32)))
-        base_logits = np.concatenate([p1[None, :], np.array(block.per_pos_logits)[0]], axis=0)
+        base_logits = np.concatenate([p1[None, :], _f32(block.per_pos_logits)[0]], axis=0)
         res = greedy_accept(d, base_logits)
         m = res.n_accepted
         n_drafted += int(d.shape[0])
@@ -75,7 +80,7 @@ def generate(
 
         last = int(res.tokens[-1])
         step = adapter.decode_step(mx.array([last], dtype=mx.int32))
-        p1 = np.array(step.logits)[0]
+        p1 = _f32(step.logits)[0]
         main_hidden = step.main_hidden.reshape(1, 1, -1)
         t = t + m + 1
         anchor = last
