@@ -93,6 +93,33 @@ fixed (structurally correct), but a *pretrained* base (no chat template) gives ~
 acceptance than the deployed instruct model the draft is trained for. Switching to
 `gemma-4-12b-it` with its chat template took it to 5.84 / 69%.
 
+## vs DFlash (and Eagle3)
+
+DSpark, DFlash, and Eagle3 are the three drafters in DeepSeek's DeepSpec. Fair head-to-head on
+**Qwen3-4B / GSM8K / same Metal hardware / 10-prompt median speedup / same greedy baseline**,
+each method tuned to its best (DSpark eager loop; DFlash `--verify-mode ddtree --copyspec-mode
+auto` + quantized draft — its default config was only 0.89×):
+
+| | DSpark bf16 | **DSpark q8** | DFlash bf16 | DFlash q4 |
+|---|---|---|---|---|
+| thinking-on  | 1.25× | **1.48×** | 0.98× | 1.07× |
+| thinking-off | 1.99× | **2.55×** | 1.33× | 1.57× |
+
+Tokens per target-forward (the hardware-independent efficiency metric): DSpark **3.89** (on) /
+**6.19** (off) vs DFlash **2.85** (on). **DSpark wins in every quadrant**; at each method's best
+(thinking-off + quantized draft) DSpark **2.55×** vs DFlash **1.57×** (~1.6×). Consistent with
+the paper ordering (DSpark > DFlash > Eagle3), though our gap exceeds the paper's +16–18%
+accepted-length margin. Caveats:
+
+- **Hardware: pre-M5 Apple GPU** (NAX matrix kernels unavailable → steel fallback). DFlash's
+  custom `verify_qmm` Metal kernels target newer chips, so **DFlash would likely close the gap on
+  M5+**. DSpark uses MLX's *built-in* quantized matmul everywhere (verify + quantized draft), so
+  it inherits NAX automatically on M5+ without custom kernels — see finding 8.
+- DFlash is tuned to its best here; DSpark-mlx is *also* untuned (no custom kernels).
+- **Eagle3 has no MLX implementation** (no package / checkpoints) — paper-cited only: DSpark =
+  Eagle3 +30%, DFlash = Eagle3 +16–18% accepted length.
+- DFlash uses tree / block-16 speculation, DSpark block-7; `tokens_per_cycle` normalizes this.
+
 ## Key findings
 
 1. **Eager loop** (`loop.py`) — one base forward/cycle instead of two; conditions the draft
@@ -114,8 +141,20 @@ acceptance than the deployed instruct model the draft is trained for. Switching 
    quantizing the *whole* draft (incl. embedding + Markov head) is acceptance-lossless at 8-bit,
    0.53× the size, and lifts speedup everywhere (Qwen3-4B bf16 base 1.26× → **1.67×** q8; 8-bit
    base 1.27× → 1.51×). A custom small-M verify GEMM kernel (DFlash's `verify_qmm.py`) would
-   *not* help — the verify is already memory-bound-efficient at M=8; the bf16 draft was the
-   bottleneck. (DeepSeek-V4 already ships its draft as fp8.)
+   *not* help on this hardware — the verify is already memory-bound-efficient at M=8; the bf16
+   draft was the bottleneck. (DeepSeek-V4 already ships its draft as fp8.)
+8. **DSpark inherits new-hardware (M5+/NAX) speedups for free; DFlash needs custom kernels.**
+   DFlash hand-wrote ~2,000 LOC of Metal (`verify_qmm.py`) because its *tree* verify has
+   irregular small-M shapes (M = number of branches: m4/m16 k-split, mma2big) that MLX's stock
+   ops don't optimize — and those kernels carry NAX (M5+) paths. DSpark verifies a single dense
+   block of K+1 tokens and runs its quantized draft through **MLX's built-in `quantized_matmul`**
+   everywhere, so it picks up NAX automatically when MLX adds it — no custom kernel to write or
+   maintain. A bespoke verify kernel could only help DSpark on M5+ if MLX's built-in turned out
+   suboptimal for the M=8 shape; that's testable when M5 hardware is available, and the verify is
+   memory-bound at M=8 regardless, so the upside is bounded. Net: the `verify_qmm` lever is
+   DFlash-specific; DSpark gets the equivalent through MLX. *(This is why the comparison above
+   notes DFlash would close the gap on M5+ — it ships the kernels; DSpark waits on MLX, which is
+   the right place for that work.)*
 
 ## Reproduce
 
