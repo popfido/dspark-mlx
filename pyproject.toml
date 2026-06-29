@@ -9,7 +9,8 @@ description = "DSpark self-speculative decoding for Apple Silicon (MLX) — loss
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
-authors = [{name = "popfido"}]
+authors = [{name = "popfido", email = "wanghailin317@gmail.com"}]
+maintainers = [{name = "popfido", email = "wanghailin317@gmail.com"}]
 keywords = ["mlx", "apple-silicon", "speculative-decoding", "dspark", "llm-inference", "deepseek", "qwen3", "gemma"]
 classifiers = [
     "License :: OSI Approved :: Apache Software License",

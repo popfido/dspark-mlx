@@ -9,6 +9,22 @@ the verify/accept policy; the base model is supplied by the host through a small
 (`dspark_mlx/adapter.py`). The emitted stream is identical to greedy decoding from the base
 model alone.
 
+## Install
+
+```bash
+pip install dspark-mlx          # core — Qwen3 bases via mlx-lm
+pip install dspark-mlx[gemma]   # + Gemma (mlx-vlm loads the gemma4_unified text tower)
+```
+
+```bash
+dspark generate --model qwen3-4b "Explain speculative decoding." --quant-draft 8 --no-think
+dspark bench    --model qwen3-4b --quant-draft 8 --no-think
+dspark eval     --model qwen3-4b --dataset gsm8k --n 20
+```
+
+The package itself is tiny; `dspark` downloads the DSpark draft + the deployed **instruct** base
+on first use (some bases — e.g. `google/gemma-4-12b-it` — are gated and large, ~24 GB).
+
 ## Architectures
 
 One DSpark recipe, three base-model backbones — selected by `model_type` via the registry
