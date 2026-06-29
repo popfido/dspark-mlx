@@ -12,8 +12,7 @@ model alone.
 ## Install
 
 ```bash
-pip install dspark-mlx          # core — Qwen3 bases via mlx-lm
-pip install dspark-mlx[gemma]   # + Gemma (mlx-vlm loads the gemma4_unified text tower)
+pip install dspark-mlx          # Qwen3 (mlx-lm) and Gemma (mlx-vlm) both supported out of the box
 ```
 
 ```bash

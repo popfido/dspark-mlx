@@ -77,7 +77,7 @@ def cmd_models(_args) -> None:
     print(f"{'name':12s}  draft  +  base (deployed instruct)")
     for name, (draft, base) in KNOWN_MODELS.items():
         print(f"{name:12s}  {draft}  +  {base}")
-    print("\nGemma bases are gemma4_unified (multimodal) — install the 'gemma' extra for mlx-vlm.")
+    print("\nGemma bases are gemma4_unified (multimodal); the text tower loads via mlx-vlm (bundled).")
 
 
 def cmd_generate(args) -> None:

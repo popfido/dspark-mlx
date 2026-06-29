@@ -21,15 +21,16 @@ classifiers = [
 dependencies = [
     "mlx>=0.31.0",
     "mlx-lm>=0.31.0",
+    # Gemma bases are multimodal (gemma4_unified); the host loads the text tower via mlx-vlm.
+    # Core so Qwen3 *and* Gemma work out of the box.
+    "mlx-vlm>=0.6.0",
     "numpy",
 ]
 
 [project.optional-dependencies]
-# Gemma bases are multimodal (gemma4_unified); the host loads the text tower via mlx-vlm.
-gemma = ["mlx-vlm>=0.6.0"]
-# eval_accept / the `dspark eval` subcommand pull GSM8K / MBPP from the HF hub.
+# `dspark eval` pulls GSM8K / MBPP from the HF hub.
 bench = ["datasets"]
-dev = ["pytest", "torch", "numpy", "datasets", "mlx-vlm>=0.6.0"]
+dev = ["pytest", "torch", "numpy", "datasets"]
 
 [project.urls]
 Homepage = "https://github.com/popfido/dspark-mlx"
