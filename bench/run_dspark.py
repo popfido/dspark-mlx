@@ -74,10 +74,14 @@ def _base_greedy(adapter, prompt_ids: List[int], n: int) -> Run:
     return Run(tokens=out, seconds=time.perf_counter() - t0)
 
 
-def _dspark(adapter, drafter, prompt_ids: List[int], n: int, eos: Optional[int], loop="legacy") -> Run:
+def _dspark(adapter, drafter, prompt_ids: List[int], n: int, eos: Optional[int],
+            loop="legacy", confidence=0.0) -> Run:
     adapter.reset()
     drafter.reset()
-    gen = generate_eager if loop == "eager" else generate
+    if loop == "eager":
+        gen = lambda *a, **k: generate_eager(*a, confidence_threshold=confidence, **k)
+    else:
+        gen = generate
     t0 = time.perf_counter()
     events = list(gen(adapter, drafter, [prompt_ids], max_new_tokens=n, eos_id=eos))
     seconds = time.perf_counter() - t0
@@ -136,6 +140,8 @@ def main() -> None:
                     help="eager = one base forward/cycle (reference-matched)")
     ap.add_argument("--chat", action="store_true",
                     help="wrap the prompt in the chat template (in-distribution for the draft)")
+    ap.add_argument("--confidence", type=float, default=0.0,
+                    help="confidence-gated draft length (sigmoid threshold; 0 = full block)")
     args = ap.parse_args()
 
     print(f"loading {args.arch} base ({args.precision}) + draft ...", flush=True)
@@ -149,11 +155,11 @@ def main() -> None:
         prompt_ids = tokenizer.encode(args.prompt)
 
     if args.warmup:
-        _dspark(adapter, drafter, prompt_ids, args.warmup, None, args.loop)
+        _dspark(adapter, drafter, prompt_ids, args.warmup, None, args.loop, args.confidence)
         _base_greedy(adapter, prompt_ids, args.warmup)
 
     # eos disabled for a fixed-length, comparable benchmark window
-    ds = _dspark(adapter, drafter, prompt_ids, args.max_new_tokens, None, args.loop)
+    ds = _dspark(adapter, drafter, prompt_ids, args.max_new_tokens, None, args.loop, args.confidence)
     base = _base_greedy(adapter, prompt_ids, len(ds.tokens))
 
     note = _lossless_note(ds.tokens, base.tokens)

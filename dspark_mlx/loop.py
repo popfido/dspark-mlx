@@ -29,12 +29,26 @@ from .generate import _f32
 from .verify import greedy_accept
 
 
+def _confident_prefix_length(confidence_logits: np.ndarray, block_size: int, threshold: float) -> int:
+    """Reference ``_confident_prefix_length``: keep the prefix while P(accept) >= threshold.
+
+    ``confidence_logits`` are the per-position acceptance logits; ``sigmoid(.) < threshold``
+    truncates the block there. ``threshold <= 0`` disables gating (always the full block).
+    """
+    if threshold <= 0.0:
+        return block_size
+    probs = 1.0 / (1.0 + np.exp(-confidence_logits))
+    below = np.nonzero(probs < threshold)[0]
+    return int(below[0]) if below.size else block_size
+
+
 def generate_eager(
     adapter,
     drafter,
     prompt_tokens,
     max_new_tokens: int,
     eos_id: Optional[int] = None,
+    confidence_threshold: float = 0.0,
 ) -> Iterator[object]:
     prompt = np.asarray(prompt_tokens).reshape(1, -1)
     P = prompt.shape[1]
@@ -51,9 +65,12 @@ def generate_eager(
     while n_emitted < max_new_tokens:
         out = drafter.draft(mx.array([anchor], dtype=mx.int32))
         d = np.array(out[0])[0, 1:]                             # [block] drafts
-        verify = np.concatenate([[anchor], d]).astype(np.int32)  # [anchor, d_1..d_block]
+        if confidence_threshold > 0.0:                         # gate the speculation depth
+            klen = _confident_prefix_length(_f32(out[2])[0], block, confidence_threshold)
+            d = d[:klen]
+        verify = np.concatenate([[anchor], d]).astype(np.int32)  # [anchor, d_1..d_k]
         blk = adapter.verify_forward(mx.array(verify[None, :]))
-        base_logits = _f32(blk.per_pos_logits)[0]              # [block+1, V] = p_1..p_{block+1}
+        base_logits = _f32(blk.per_pos_logits)[0]              # [k+1, V] = p_1..p_{k+1}
         res = greedy_accept(d, base_logits)
         m = res.n_accepted
         n_drafted += int(d.shape[0])
