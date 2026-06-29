@@ -150,6 +150,59 @@ Caveats:
   Eagle3 +30%, DFlash = Eagle3 +16–18% accepted length.
 - DFlash uses tree / block-16 speculation, DSpark block-7; `tokens_per_cycle` normalizes this.
 
+## vs Google's official Gemma-4 MTP assistant (both under MLX)
+
+Google ships a first-party speculative drafter for Gemma 4 — the QAT **assistant / MTP head**
+(`google/gemma-4-12B-it-…-assistant`, an EAGLE-3-style 4-layer model, hidden **1024**, ~450M
+params, that cross-attends to the *target's* shared KV cache and predicts the next target hidden).
+mlx-vlm 0.6.2 implements it as the `gemma4_unified_assistant` drafter, driven via
+`mlx_vlm.generate.generate_step(draft_model=…, draft_kind="mtp")` — so DSpark's draft goes
+head-to-head against Google's own **entirely under MLX**: same target (`gemma-4-12b-it`, bf16),
+same Metal hardware, same greedy decode, same 128-token budget, same prompts (one math / code /
+chat dataset, **n=20**). No llama.cpp runtime confound — the only variable is the draft head.
+
+Two axes matter: **draft depth** (the assistant *ships* capped at block-4 / 3 drafts; DSpark at
+block-7 / 7 drafts — but the assistant can be pushed to DSpark's depth via
+`prefer_requested_block_size`) and **draft precision** (bf16 vs q8). Speedup vs plain base greedy:
+
+**bf16 draft**
+
+| dataset | domain | MTP assistant (native blk-4) | MTP assistant (unified ~7) | DSpark (blk-7) |
+|---|---|---|---|---|
+| GSM8K | math | 1.43× | **2.04×** | 1.85× |
+| HumanEval | code | 1.57× | **2.32×** | 2.05× |
+| MT-Bench | chat | 1.14× | **1.19×** | 0.93× |
+
+**q8 draft**
+
+| dataset | domain | MTP assistant (native blk-4) | MTP assistant (unified ~7) | DSpark (blk-7) |
+|---|---|---|---|---|
+| GSM8K | math | 1.44× | 1.94× | **2.32×** |
+| HumanEval | code | 1.51× | 2.16× | **2.55×** |
+| MT-Bench | chat | 1.07× | 1.14× | 1.13× |
+
+At the **unified depth** (~7 drafts each) the two drafts have **near-identical accept rates**
+(GSM8K ~67%, HumanEval ~80%, MT-Bench ~28%) and τ — so they are equally *good* predictors; every
+speedup difference is pure draft **cost** (network size × precision). Three findings fall out:
+
+- **Depth, not architecture, drove the first-look gap.** The assistant ships capped at block-4, so
+  *as deployed* DSpark's block-7 drafts deeper and wins (bf16 GSM8K 1.85× vs 1.43×). Lift the cap to
+  match depth and the assistant **edges DSpark in bf16 everywhere** (2.04 vs 1.85, 2.32 vs 2.05,
+  1.19 vs 0.93) — its 450M draft net is ~5× lighter than DSpark's (hidden 1024 vs 3840), so at equal
+  acceptance the cheaper draft forward wins wall-clock.
+- **Quantization flips the winner.** q8 (acceptance-lossless for both) **lifts DSpark a lot**
+  (GSM8K 1.85→2.32×, HumanEval 2.05→**2.55×**, chat 0.93→1.13×) because its big draft is
+  bandwidth-bound — exactly the case q8 helps (finding 7). It is **neutral-to-negative for the
+  assistant** (GSM8K 2.04→1.94×, HumanEval 2.32→2.16×): the 450M draft is already cheap, so q8
+  dequant overhead isn't repaid. Net: **bf16 → assistant wins, q8 → DSpark wins.**
+- **Chat is hard for both** (~1.0–1.2× either way) — deep drafting on high-entropy text barely
+  amortizes; bf16 DSpark even dips below 1× (0.93×) before q8 rescues it to 1.13×.
+
+Bottom line at each side's best MLX config: **DSpark q8** (GSM8K 2.32× / HumanEval 2.55× / chat
+1.13×) vs **assistant bf16 unified** (2.04× / 2.32× / 1.19×) — DSpark q8 takes math/code, the
+assistant bf16 edges chat. They're closer than the as-shipped (native-block) numbers suggest;
+the right knob (depth + draft precision) matters more than which drafter.
+
 ## Key findings
 
 1. **Eager loop** (`loop.py`) — one base forward/cycle instead of two; conditions the draft
@@ -185,6 +238,17 @@ Caveats:
    DFlash-specific; DSpark gets the equivalent through MLX. *(This is why the comparison above
    notes DFlash would close the gap on M5+ — it ships the kernels; DSpark waits on MLX, which is
    the right place for that work.)*
+9. **vs Google's own Gemma-4 MTP assistant (MLX-vs-MLX) — depth and precision decide it, not the
+   draft architecture.** Run head-to-head against the first-party EAGLE-3 assistant (mlx-vlm
+   `gemma4_unified_assistant` via `mlx_vlm.generate.generate_step(draft_model=…,
+   draft_kind="mtp")`), at *matched draft depth* the two have near-identical accept rate and τ — so
+   they predict equally well; the gap is pure draft *cost*. (a) The assistant *ships* capped at
+   block-4, so as-deployed DSpark's block-7 wins; lift the cap and the assistant's ~5× lighter
+   450M net (hidden 1024 vs 3840) **edges DSpark in bf16** (GSM8K 2.04× vs 1.85×). (b) q8
+   (lossless for both) **lifts DSpark a lot** (bandwidth-bound big draft: GSM8K→2.32×, code→2.55×)
+   but is **neutral/negative for the tiny assistant** — so **q8 flips the winner back to DSpark**
+   on math/code. Lesson: pick the draft *depth* and *precision* for your draft-net size; both
+   heads are within ~10–20% once you do — see the head-to-head section.
 
 ## Reproduce
 
@@ -192,7 +256,12 @@ Caveats:
 # speedup (add --quant-draft 8 for a free ~25% boost, --no-think for high acceptance)
 python bench/run_dspark.py  --arch qwen3 --precision bf16 --loop eager --chat --quant-draft 8 \
     --prompt "Explain why speculative decoding speeds up LLM inference."
-# acceptance length
+# acceptance length — math (gsm8k, math500), code (humaneval, mbpp), chat (mtbench, alpaca)
 python bench/eval_accept.py --arch qwen3 --dataset gsm8k --chat --n 20 [--no-think] [--quant-draft 8]
-python bench/eval_accept.py --arch qwen3 --dataset mbpp  --chat --n 20
+python bench/eval_accept.py --arch gemma4 --dataset mtbench --chat --n 20
+
+# DSpark vs Google's official Gemma-4 MTP assistant, both under MLX, same gemma-4-12b-it target:
+#   the assistant is mlx-vlm's `gemma4_unified_assistant` drafter (mlx-community/
+#   gemma-4-12B-it-assistant-bf16), run via mlx_vlm.generate.generate_step(draft_model=…,
+#   draft_kind="mtp"); DSpark via dspark_mlx.loop.generate_eager. See _repro/mtp_vs_dspark.py.
 ```

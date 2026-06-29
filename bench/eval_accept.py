@@ -55,8 +55,27 @@ def _humaneval(n):
     return ["Complete the following Python function:\n\n" + ex["prompt"] for ex in ds.select(range(n))]
 
 
-# math: gsm8k (grade-school), math500 (competition) · code: humaneval, mbpp
-DATASETS = {"gsm8k": _gsm8k, "math500": _math500, "humaneval": _humaneval, "mbpp": _mbpp}
+def _mtbench(n):
+    from datasets import load_dataset
+
+    ds = load_dataset("HuggingFaceH4/mt_bench_prompts", split="train")  # 80 multi-turn prompts
+    return [ex["prompt"][0] for ex in ds.select(range(min(n, len(ds))))]  # first turn only
+
+
+def _alpaca(n):
+    from datasets import load_dataset
+
+    ds = load_dataset("tatsu-lab/alpaca", split="train")
+    rows = []
+    for ex in ds.select(range(n)):
+        instr = ex["instruction"]
+        rows.append(f"{instr}\n\n{ex['input']}" if ex["input"] else instr)
+    return rows
+
+
+# math: gsm8k (grade-school), math500 (competition) · code: humaneval, mbpp · chat: mtbench, alpaca
+DATASETS = {"gsm8k": _gsm8k, "math500": _math500, "humaneval": _humaneval, "mbpp": _mbpp,
+            "mtbench": _mtbench, "alpaca": _alpaca}
 
 
 def _ids_from(out):

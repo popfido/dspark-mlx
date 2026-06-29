@@ -116,6 +116,12 @@ def cmd_eval(args) -> None:
     elif args.dataset == "humaneval":
         rows = ["Complete the following Python function:\n\n" + ex["prompt"]
                 for ex in load_dataset("openai_humaneval", split="test").select(range(n))]
+    elif args.dataset == "mtbench":
+        ds = load_dataset("HuggingFaceH4/mt_bench_prompts", split="train")
+        rows = [ex["prompt"][0] for ex in ds.select(range(min(n, len(ds))))]
+    elif args.dataset == "alpaca":
+        ds = load_dataset("tatsu-lab/alpaca", split="train").select(range(n))
+        rows = [f"{ex['instruction']}\n\n{ex['input']}" if ex["input"] else ex["instruction"] for ex in ds]
     else:  # mbpp
         rows = [f"{ex['text']}\n{chr(10).join(ex['test_list'])}"
                 for ex in load_dataset("mbpp", split="test").select(range(n))]
@@ -155,9 +161,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     _add_model_args(g)
     g.add_argument("--prompt", default="Explain why speculative decoding speeds up LLM inference.")
     g.add_argument("--no-eos", action="store_true")
-    e = sub.add_parser("eval", help="average accepted length over GSM8K / MBPP")
+    e = sub.add_parser("eval", help="average accepted length over math / code / chat datasets")
     _add_model_args(e)
-    e.add_argument("--dataset", choices=["gsm8k", "math500", "humaneval", "mbpp"], default="gsm8k")
+    e.add_argument("--dataset", choices=["gsm8k", "math500", "humaneval", "mbpp", "mtbench", "alpaca"],
+                   default="gsm8k")
     e.add_argument("--n", type=int, default=20)
 
     args = p.parse_args(argv)
