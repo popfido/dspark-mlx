@@ -37,7 +37,7 @@ PRESETS = {
     },
     "gemma4": {
         # the DSpark draft targets the deployed (instruct) model; the pretrained base has no
-        # chat template and gives low acceptance (see RESULTS.md)
+        # chat template and gives low acceptance (see BENCHMARK.md)
         "base": {"bf16": "google/gemma-4-12b-it", "8bit": "google/gemma-4-12b-it"},
         "ckpt": f"{_RESEARCH}/ckpt/gemma4_12b.safetensors",
         "config": f"{_RESEARCH}/gemma4_12b_config.json",

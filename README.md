@@ -33,6 +33,23 @@ for event in generate(adapter, drafter, prompt_tokens, max_new_tokens):
     ...
 ```
 
+## Benchmarks
+
+Lossless speedup on Apple Silicon (eager loop, greedy) and average **accepted length**
+(τ = tokens per verify step) vs the DSpark paper — the hardware-independent metric the paper
+reports. Both backbones land in the paper's acceptance band. Full methodology, all precisions,
+and findings in **[BENCHMARK.md](BENCHMARK.md)**.
+
+| model | accepted length (GSM8K) | acceptance rate | speedup |
+|---|---|---|---|
+| Qwen3-4B (bf16) | 3.86 | 41% | 1.17× |
+| Gemma4-12B-it (bf16) | **5.84** | **69%** | **2.06×** |
+
+Speedup tracks acceptance length, so a more expensive base gives a bigger win at high
+acceptance. Quantized (8-bit) bases lose — they cheapen the base *and* lower acceptance. The
+draft must target the deployed **instruct** model (the pretrained Gemma base gives ~3× lower
+acceptance).
+
 Based on `deepseek-ai/DeepSeek-V4-Flash-DSpark` and the DeepSpec codebase (`dspark/*`).
 Repo structure mirrors `dflash-mlx`.
 
