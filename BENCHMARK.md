@@ -111,10 +111,13 @@ Tokens per target-forward (the hardware-independent efficiency metric): DSpark *
 the paper ordering (DSpark > DFlash > Eagle3), though our gap exceeds the paper's +16–18%
 accepted-length margin.
 
-On **Gemma4-12B-it**, DSpark reaches **2.35× (q8 draft) / 1.93× (bf16)** (tokens/cycle 5.97), but
-the head-to-head can't be run: **dflash-mlx doesn't support the `gemma4_unified` multimodal base**
-(its target backends are `gemma4_text` + `qwen_gdn`), whereas DSpark's mlx-vlm host loads the
-text tower of the unified checkpoint. So DSpark has broader base coverage here. Caveats:
+On **Gemma4-12B-it**, DSpark reaches **1.93× (bf16) / 2.35× (q8)** (tokens/cycle 5.97). DFlash
+can't load the `gemma4_unified` multimodal base directly (its backends are `gemma4_text` +
+`qwen_gdn`), but converting it to a text-only `gemma4_text` checkpoint (drop vision/audio,
+`model.language_model.*` → `model.*`, surface the draft's nested `rope_theta`) lets it run:
+**1.46× (bf16) / 1.62× (w4 draft)**. So DSpark wins on Gemma too (~1.45× at each best), and its
+mlx-vlm host loads the unified base directly — broader coverage; DFlash needs the conversion.
+Caveats:
 
 - **Hardware: pre-M5 Apple GPU** (NAX matrix kernels unavailable → steel fallback). DFlash's
   custom `verify_qmm` Metal kernels target newer chips, so **DFlash would likely close the gap on
