@@ -42,13 +42,16 @@ and findings in **[BENCHMARK.md](BENCHMARK.md)**.
 
 | model | accepted length (GSM8K) | acceptance rate | speedup |
 |---|---|---|---|
-| Qwen3-4B (bf16) | 3.86 | 41% | 1.17× |
+| Qwen3-4B (bf16) | 3.86 / 6.27† | 41% / 75%† | 1.17× |
+| Qwen3-14B (bf16) | 3.79 / 6.29† | 40% / 76%† | **1.98×**† |
 | Gemma4-12B-it (bf16) | **5.84** | **69%** | **2.06×** |
 
-Speedup tracks acceptance length, so a more expensive base gives a bigger win at high
-acceptance. Quantized (8-bit) bases lose — they cheapen the base *and* lower acceptance. The
-draft must target the deployed **instruct** model (the pretrained Gemma base gives ~3× lower
-acceptance).
+†thinking off (`--no-think`). Two knobs: **acceptance length** is set by the draft + task
+(≈ size-independent — 4B ≈ 14B), while **speedup** is set by how expensive the base is (a
+costlier base amortizes the draft better, so Qwen3-4B 1.17× → 14B 1.98× → Gemma-12B 2.06×).
+Quantized (8-bit) bases lose — they cheapen the base *and* lower acceptance. The draft must
+target the deployed **instruct** model (the pretrained Gemma base gives ~3× lower acceptance);
+Qwen3's `<think>` traces roughly halve acceptance vs `--no-think`.
 
 Based on `deepseek-ai/DeepSeek-V4-Flash-DSpark` and the DeepSpec codebase (`dspark/*`).
 Repo structure mirrors `dflash-mlx`.

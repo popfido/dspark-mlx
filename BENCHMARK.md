@@ -13,18 +13,22 @@ nondeterminism, not loss). Decode loop = `generate_eager` (one base forward per 
 
 | model | precision | base greedy | DSpark | speedup | accepted/block (prompt) |
 |---|---|---|---|---|---|
-| Qwen3-4B | bf16 | 37 tok/s | 42 tok/s | **1.17×** | 2.49 (chat) |
+| Qwen3-4B | bf16 | 37 tok/s | 42 tok/s | 1.17× | 2.49 (chat, thinking on) |
 | Qwen3-4B | 8-bit | 69 tok/s | 52 tok/s | 0.75× | 2.24 |
-| **Gemma4-12B-it** | bf16 | 13.0 tok/s | 26.8 tok/s | **2.06×** | **5.24** (chat) |
+| **Qwen3-14B** | bf16 | 11.4 tok/s | 22.5 tok/s | **1.98×** | 4.72 (chat, no-think) |
+| **Gemma4-12B-it** | bf16 | 13.0 tok/s | 26.8 tok/s | **2.06×** | 5.24 (chat) |
 | Gemma4-12B (base/pretrained) | bf16 | 13.5 tok/s | 11.7 tok/s | 0.87× | 1.46 (raw) |
 
-**Speedup is driven by acceptance length.** High acceptance amortizes the base forward over
-more tokens, so an *expensive* base (12B) gives the *bigger* win when acceptance is high
-(Gemma4-12B-it: 5.24 accepted/block → 2.06×). The Gemma `(base/pretrained)` row is the wrong
-target — the DSpark draft is trained for the deployed **instruct** model, and a pretrained base
-(no chat template) gives ~3× lower acceptance. **8-bit bases lose** (Qwen3 0.75×) because
-quantization both cheapens the base *and* lowers acceptance (quantized hiddens diverge from the
-draft's bf16 training).
+**Two orthogonal knobs.** *Acceptance length* is set by the **draft + task** (and is roughly
+**size-independent** within a family — Qwen3-4B and 14B give the same ~3.8 / ~6.3 accepted
+length, thinking on / off). *Speedup* is set by how **expensive the base** is: a costlier base
+amortizes the fixed draft + verify overhead better, so at similar acceptance the bigger model
+wins — Qwen3-4B 1.17× → Qwen3-14B 1.98× → Gemma4-12B-it 2.06×.
+
+The Gemma `(base/pretrained)` row is the wrong target — the DSpark draft is trained for the
+deployed **instruct** model, and a pretrained base (no chat template) gives ~3× lower acceptance.
+**8-bit bases lose** (Qwen3 0.75×) because quantization both cheapens the base *and* lowers
+acceptance (quantized hiddens diverge from the draft's bf16 training).
 
 ## Acceptance length vs the DSpark paper
 
@@ -38,6 +42,7 @@ from a 50-sample slice (stable vs a 12-sample slice — thinking-on identical, t
 | Qwen3-4B (thinking on) | GSM8K (math, chat) | **3.85** | 41% | default Qwen3 chat template |
 | Qwen3-4B (**thinking off**) | GSM8K (math, chat) | **6.27** | **75%** | `--no-think` — see below |
 | Qwen3-4B | MBPP (code, chat) | **3.20** | 31% | math > code, as expected ✓ |
+| Qwen3-14B (think on / off) | GSM8K (math, chat) | 3.79 / **6.29** | 40% / **76%** | ≈ 4B — acceptance is size-independent |
 | **Gemma4-12B-it** | GSM8K (math, chat) | **5.84** | **69%** | matches/exceeds the paper ✓ |
 | Gemma4-12B (base) | GSM8K (raw) | ~2.5 | 21% | wrong target — pretrained, no chat template |
 
