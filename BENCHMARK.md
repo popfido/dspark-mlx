@@ -34,21 +34,25 @@ below).
 ## Quantizing the drafter
 
 DeepSeek-V4 ships its draft as **fp8** (the DSpark layers live in the fp8 base checkpoint), so a
-low-precision drafter is the intended design. Quantizing the draft's compute Linears (incl.
-`lm_head`) via `--quant-draft {8,4}` (keeping the Markov + confidence heads full precision) is
-**acceptance-lossless at 8-bit**, and since the draft is a big share of each cycle (≈36% bf16
-base, ≈46% 8-bit base) it lifts speedup across the board:
+low-precision drafter is the intended design. `--quant-draft {8,4}` (`dspark_mlx.quantize_drafter`)
+quantizes the **whole draft** — compute Linears, `lm_head`, the token embedding, and the Markov
+head's rank→vocab projection. 8-bit is **acceptance-lossless**, and it's both smaller and faster
+(the Markov projection is a real per-block matmul, so quantizing it helps speed too, not just
+size):
 
-| | accepted length (8b / 4b vs bf16) | speedup: bf16 draft → q8 → q4 |
-|---|---|---|
-| Qwen3-4B draft, **bf16 base** | 6.13 / 5.91 vs 6.12 | 1.21× → **1.38×** → **1.52×** |
-| Qwen3-4B draft, **8-bit base** | (no-think) | 1.27× → **1.51×** → 1.50× |
-| Gemma4-12B draft | 5.52 / 5.30 vs 5.51 | — |
+| Qwen3-4B draft | size | accepted length | bf16-base speedup |
+|---|---|---|---|
+| bf16 | 2786 MB (1.00×) | 6.12 | 1.26× |
+| **q8** | **1480 MB (0.53×)** | **6.11** | **1.67×** |
+| q4 | 784 MB (0.28×) | 5.88 | 1.57× |
 
-8-bit draft is free (≤0.1 acceptance length); 4-bit costs ~3–4%. This is a far better lever for
-the quantized-base case than a custom small-M verify GEMM kernel — the verify is already
-memory-bound-efficient at M=8 (verify(8) ≈ 2.35× a single decode), so the bf16 *draft*, not the
-verify, was the bottleneck.
+Gemma4-12B draft: 6861 → 3645 MB (q8, accepted 5.47) → 1930 MB (q4, 5.14). 8-bit is free; 4-bit
+costs ~4% (Qwen) / ~7% (Gemma) accepted length. q8 also makes the 8-bit *base* win (1.27× → 1.51×).
+
+This is a far better lever for the quantized case than a custom small-M verify GEMM kernel — the
+verify is already memory-bound-efficient at M=8 (verify(8) ≈ 2.35× a single decode), so the bf16
+*draft*, not the verify, was the bottleneck. (Quantizing only the Linears and not the embedding +
+Markov head — a tempting "be safe" choice — is *worse* on all three axes: 0.69× size, 1.51× speed.)
 
 ## Acceptance length vs the DSpark paper
 
@@ -99,10 +103,11 @@ acceptance than the deployed instruct model the draft is trained for. Switching 
 6. **Thinking mode roughly halves Qwen3 acceptance** — `<think>` traces are hard to draft;
    `--no-think` takes Qwen3-4B GSM8K (n=50) from τ 3.85 / 41% to **6.27 / 75%**.
 7. **Quantize the draft, not the verify** (`--quant-draft`, `dspark_mlx.quantize_drafter`) —
-   8-bit draft is acceptance-lossless and ~2× cheaper, lifting speedup everywhere (bf16 base
-   1.21× → 1.52× q4; 8-bit base 1.27× → 1.51× q8). A custom small-M verify GEMM kernel (DFlash's
-   `verify_qmm.py`) would *not* help — the verify is already memory-bound-efficient at M=8; the
-   bf16 draft was the bottleneck. (DeepSeek-V4 already ships its draft as fp8.)
+   quantizing the *whole* draft (incl. embedding + Markov head) is acceptance-lossless at 8-bit,
+   0.53× the size, and lifts speedup everywhere (Qwen3-4B bf16 base 1.26× → **1.67×** q8; 8-bit
+   base 1.27× → 1.51×). A custom small-M verify GEMM kernel (DFlash's `verify_qmm.py`) would
+   *not* help — the verify is already memory-bound-efficient at M=8; the bf16 draft was the
+   bottleneck. (DeepSeek-V4 already ships its draft as fp8.)
 
 ## Reproduce
 
