@@ -144,14 +144,17 @@ def main() -> None:
                     help="wrap the prompt in the chat template (in-distribution for the draft)")
     ap.add_argument("--confidence", type=float, default=0.0,
                     help="confidence-gated draft length (sigmoid threshold; 0 = full block)")
+    ap.add_argument("--no-think", action="store_true",
+                    help="disable thinking mode in the chat template (Qwen3) -- higher acceptance")
     args = ap.parse_args()
 
     print(f"loading {args.arch} base ({args.precision}) + draft ...", flush=True)
     model, tokenizer, adapter = _load_base(args.arch, args.precision)
     drafter = _load_drafter(args.arch)
     if args.chat and getattr(tokenizer, "chat_template", None):
+        kw = {"enable_thinking": False} if args.no_think else {}
         prompt_ids = tokenizer.apply_chat_template(
-            [{"role": "user", "content": args.prompt}], add_generation_prompt=True, tokenize=True
+            [{"role": "user", "content": args.prompt}], add_generation_prompt=True, tokenize=True, **kw
         )
         if isinstance(prompt_ids, dict) or hasattr(prompt_ids, "keys"):
             prompt_ids = prompt_ids["input_ids"]

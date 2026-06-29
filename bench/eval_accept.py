@@ -53,10 +53,11 @@ def _ids_from(out):
     return [int(t) for t in out]
 
 
-def _encode(tokenizer, text, chat):
+def _encode(tokenizer, text, chat, think=True):
     if chat and getattr(tokenizer, "chat_template", None):
+        kw = {} if think else {"enable_thinking": False}
         return _ids_from(tokenizer.apply_chat_template(
-            [{"role": "user", "content": text}], add_generation_prompt=True, tokenize=True
+            [{"role": "user", "content": text}], add_generation_prompt=True, tokenize=True, **kw
         ))
     return tokenizer.encode(text)
 
@@ -69,6 +70,7 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=20, help="number of samples")
     ap.add_argument("--max-new-tokens", type=int, default=256)
     ap.add_argument("--chat", action="store_true")
+    ap.add_argument("--no-think", action="store_true", help="disable Qwen3 thinking mode")
     args = ap.parse_args()
 
     print(f"loading {args.arch}/{args.precision} + draft ...", flush=True)
@@ -85,7 +87,7 @@ def main() -> None:
     tot_acc = tot_blocks = tot_emit = 0
     t0 = time.perf_counter()
     for i, q in enumerate(prompts):
-        ids = _encode(tokenizer, q, chat)
+        ids = _encode(tokenizer, q, chat, think=not args.no_think)
         adapter.reset()
         drafter.reset()
         events = list(generate_eager(adapter, drafter, [ids], max_new_tokens=args.max_new_tokens, eos_id=eos))
