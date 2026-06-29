@@ -30,23 +30,24 @@ draft's bf16 training).
 
 τ = average accepted length = tokens emitted per verify step (`bench/eval_accept.py`, bf16,
 greedy). The paper reports DSpark = **Eagle3 + ~30%**; Eagle3 on GSM8K is ~3–3.5, so DSpark's
-expected band is ~4–4.5 (math), lower for code.
+expected band is ~4–4.5 (math), lower for code. GSM8K test = 1,319 examples; numbers below are
+from a 50-sample slice (stable vs a 12-sample slice — thinking-on identical, thinking-off ±0.2).
 
 | model | dataset | τ (micro) | acceptance rate | notes |
 |---|---|---|---|---|
-| Qwen3-4B (thinking on) | GSM8K (math, chat) | **3.86** | 41% | default Qwen3 chat template |
-| Qwen3-4B (**thinking off**) | GSM8K (math, chat) | **6.09** | **73%** | `--no-think` — see below |
+| Qwen3-4B (thinking on) | GSM8K (math, chat) | **3.85** | 41% | default Qwen3 chat template |
+| Qwen3-4B (**thinking off**) | GSM8K (math, chat) | **6.27** | **75%** | `--no-think` — see below |
 | Qwen3-4B | MBPP (code, chat) | **3.20** | 31% | math > code, as expected ✓ |
 | **Gemma4-12B-it** | GSM8K (math, chat) | **5.84** | **69%** | matches/exceeds the paper ✓ |
 | Gemma4-12B (base) | GSM8K (raw) | ~2.5 | 21% | wrong target — pretrained, no chat template |
 
 **Both arches match the paper.** DSpark's expected band is Eagle3 (~3–3.5 on GSM8K) +30%.
-Qwen3-4B lands at 3.86 (thinking on) / 6.09 (thinking off); Gemma4-12B-it at 5.84. The
+Qwen3-4B lands at 3.85 (thinking on) / 6.27 (thinking off); Gemma4-12B-it at 5.84. The
 loop/recipe/verify/accept are shared across arches, so this validates the whole port.
 
 **Thinking mode roughly halves acceptance.** Qwen3's chat template defaults to thinking on, so
 generation starts with a free-form `<think>…</think>` trace — creative text that is hard to
-draft. Disabling it (`--no-think`) nearly doubles acceptance (41% → 73%, τ 3.86 → 6.09), at
+draft. Disabling it (`--no-think`) nearly doubles acceptance (41% → 75%, τ 3.85 → 6.27), at
 which point Qwen3-4B *exceeds* Gemma4-12B-it on the same (non-thinking) footing. Use `--no-think`
 for an apples-to-apples comparison with the paper / non-reasoning models.
 
@@ -71,7 +72,7 @@ acceptance than the deployed instruct model the draft is trained for. Switching 
    instruct* model. The pretrained Gemma base (no chat template) gave ~3× lower acceptance;
    `gemma-4-12b-it` fixed it. (Qwen3-4B already *is* the instruct model.)
 6. **Thinking mode roughly halves Qwen3 acceptance** — `<think>` traces are hard to draft;
-   `--no-think` takes Qwen3-4B GSM8K from τ 3.86 / 41% to **6.09 / 73%**.
+   `--no-think` takes Qwen3-4B GSM8K (n=50) from τ 3.85 / 41% to **6.27 / 75%**.
 7. **DFlash invested ~2,000 LOC of Metal kernels** — most relevantly `verify_qmm.py`
    (small-M quantized GEMM for verify). That's the lever for the quantized-base cases where
    DSpark currently loses; not the bf16 (memory-bound) case.

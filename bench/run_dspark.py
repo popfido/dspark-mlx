@@ -35,6 +35,11 @@ PRESETS = {
         "ckpt": f"{_RESEARCH}/ckpt/qwen3_4b.safetensors",
         "config": f"{_RESEARCH}/qwen3_4b_config.json",
     },
+    "qwen3_14b": {
+        "base": {"bf16": "Qwen/Qwen3-14B", "8bit": "mlx-community/Qwen3-14B-8bit"},
+        "ckpt": f"{_RESEARCH}/ckpt/qwen3_14b.safetensors",
+        "config": f"{_RESEARCH}/qwen3_14b_config.json",
+    },
     "gemma4": {
         # the DSpark draft targets the deployed (instruct) model; the pretrained base has no
         # chat template and gives low acceptance (see BENCHMARK.md)
