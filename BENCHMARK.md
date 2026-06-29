@@ -93,6 +93,28 @@ fixed (structurally correct), but a *pretrained* base (no chat template) gives ~
 acceptance than the deployed instruct model the draft is trained for. Switching to
 `gemma-4-12b-it` with its chat template took it to 5.84 / 69%.
 
+## Cross-domain: acceptance + acceleration (math / code)
+
+Accepted length (tokens per verify step) **and wall-clock acceleration** (vs plain base greedy)
+across the paper's math and code suites, q8 draft — testing whether the draft generalizes
+**out-of-distribution to code** (token statistics very different from chat/math). It does:
+HumanEval (the canonical coding benchmark) is *top on both metrics* for both models.
+
+| dataset | domain | Qwen3-4B† accept / accel | Gemma4-12B-it accept / accel |
+|---|---|---|---|
+| **HumanEval** | code | **6.36 / 2.51×** | **6.54 / 2.62×** |
+| GSM8K | math | 6.06 / 2.51× | 5.88 / 2.32× |
+| MATH500 | math (competition) | 6.01 / 2.53× | 5.74 / 2.21× |
+| MBPP | code | 5.62 / 2.31× | 5.20 / 2.17× |
+
+†Qwen3 `--no-think`; Gemma chat; q8 draft; N=10. *accel* = median wall-clock speedup vs base
+greedy. **The draft is not out-of-distribution on code** — code tokens are highly
+structured/predictable and HumanEval supplies rich context (signature + docstring), so it tops
+both metrics. The spread tracks **prompt context/predictability**, not math-vs-code: HumanEval
+(most context) highest → MBPP (terse one-line specs) lowest; harder MATH500 ≈ grade-school GSM8K.
+Acceleration tracks accepted length and is strong throughout (**2.1–2.6×**). (LiveCodeBench is in
+the paper but its HF loader needs a deprecated dataset script — skipped.)
+
 ## vs DFlash (and Eagle3)
 
 DSpark, DFlash, and Eagle3 are the three drafters in DeepSeek's DeepSpec. Fair head-to-head on

@@ -108,11 +108,17 @@ def cmd_eval(args) -> None:
     from datasets import load_dataset
 
     drafter, model, tok, adapter = _load(args)
+    n = args.n
     if args.dataset == "gsm8k":
-        rows = [ex["question"] for ex in load_dataset("openai/gsm8k", "main", split="test").select(range(args.n))]
-    else:
-        ds = load_dataset("mbpp", split="test").select(range(args.n))
-        rows = [f"{ex['text']}\n{chr(10).join(ex['test_list'])}" for ex in ds]
+        rows = [ex["question"] for ex in load_dataset("openai/gsm8k", "main", split="test").select(range(n))]
+    elif args.dataset == "math500":
+        rows = [ex["problem"] for ex in load_dataset("HuggingFaceH4/MATH-500", split="test").select(range(n))]
+    elif args.dataset == "humaneval":
+        rows = ["Complete the following Python function:\n\n" + ex["prompt"]
+                for ex in load_dataset("openai_humaneval", split="test").select(range(n))]
+    else:  # mbpp
+        rows = [f"{ex['text']}\n{chr(10).join(ex['test_list'])}"
+                for ex in load_dataset("mbpp", split="test").select(range(n))]
     eos = getattr(tok, "eos_token_id", None)
     taus = []
     for q in rows:
@@ -151,7 +157,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     g.add_argument("--no-eos", action="store_true")
     e = sub.add_parser("eval", help="average accepted length over GSM8K / MBPP")
     _add_model_args(e)
-    e.add_argument("--dataset", choices=["gsm8k", "mbpp"], default="gsm8k")
+    e.add_argument("--dataset", choices=["gsm8k", "math500", "humaneval", "mbpp"], default="gsm8k")
     e.add_argument("--n", type=int, default=20)
 
     args = p.parse_args(argv)

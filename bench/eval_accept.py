@@ -33,6 +33,13 @@ def _gsm8k(n):
     return [ex["question"] for ex in ds.select(range(n))]
 
 
+def _math500(n):
+    from datasets import load_dataset
+
+    ds = load_dataset("HuggingFaceH4/MATH-500", split="test")
+    return [ex["problem"] for ex in ds.select(range(n))]
+
+
 def _mbpp(n):
     from datasets import load_dataset
 
@@ -41,7 +48,15 @@ def _mbpp(n):
             for ex in ds.select(range(n))]
 
 
-DATASETS = {"gsm8k": _gsm8k, "mbpp": _mbpp}
+def _humaneval(n):
+    from datasets import load_dataset
+
+    ds = load_dataset("openai_humaneval", split="test")
+    return ["Complete the following Python function:\n\n" + ex["prompt"] for ex in ds.select(range(n))]
+
+
+# math: gsm8k (grade-school), math500 (competition) · code: humaneval, mbpp
+DATASETS = {"gsm8k": _gsm8k, "math500": _math500, "humaneval": _humaneval, "mbpp": _mbpp}
 
 
 def _ids_from(out):
