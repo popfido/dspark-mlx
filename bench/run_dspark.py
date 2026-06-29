@@ -36,7 +36,9 @@ PRESETS = {
         "config": f"{_RESEARCH}/qwen3_4b_config.json",
     },
     "gemma4": {
-        "base": {"bf16": "google/gemma-4-12b", "8bit": "google/gemma-4-12b"},
+        # the DSpark draft targets the deployed (instruct) model; the pretrained base has no
+        # chat template and gives low acceptance (see RESULTS.md)
+        "base": {"bf16": "google/gemma-4-12b-it", "8bit": "google/gemma-4-12b-it"},
         "ckpt": f"{_RESEARCH}/ckpt/gemma4_12b.safetensors",
         "config": f"{_RESEARCH}/gemma4_12b_config.json",
     },
@@ -151,6 +153,11 @@ def main() -> None:
         prompt_ids = tokenizer.apply_chat_template(
             [{"role": "user", "content": args.prompt}], add_generation_prompt=True, tokenize=True
         )
+        if isinstance(prompt_ids, dict) or hasattr(prompt_ids, "keys"):
+            prompt_ids = prompt_ids["input_ids"]
+        if len(prompt_ids) and isinstance(prompt_ids[0], (list, tuple)):
+            prompt_ids = prompt_ids[0]
+        prompt_ids = [int(t) for t in prompt_ids]
     else:
         if args.chat:
             print("  (no chat template on this tokenizer -- using raw prompt)")

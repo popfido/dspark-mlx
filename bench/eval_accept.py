@@ -44,11 +44,20 @@ def _mbpp(n):
 DATASETS = {"gsm8k": _gsm8k, "mbpp": _mbpp}
 
 
+def _ids_from(out):
+    """apply_chat_template may return a flat list, a [[...]] batch, or a dict/BatchEncoding."""
+    if isinstance(out, dict) or hasattr(out, "keys"):
+        out = out["input_ids"]
+    if len(out) and isinstance(out[0], (list, tuple)):
+        out = out[0]
+    return [int(t) for t in out]
+
+
 def _encode(tokenizer, text, chat):
     if chat and getattr(tokenizer, "chat_template", None):
-        return tokenizer.apply_chat_template(
+        return _ids_from(tokenizer.apply_chat_template(
             [{"role": "user", "content": text}], add_generation_prompt=True, tokenize=True
-        )
+        ))
     return tokenizer.encode(text)
 
 

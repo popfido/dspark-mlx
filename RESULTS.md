@@ -15,12 +15,16 @@ nondeterminism, not loss). Decode loop = `generate_eager` (one base forward per 
 |---|---|---|---|---|---|
 | Qwen3-4B | bf16 | 37 tok/s | 42 tok/s | **1.17×** | 2.49 (chat) |
 | Qwen3-4B | 8-bit | 69 tok/s | 52 tok/s | 0.75× | 2.24 |
-| Gemma4-12B | bf16 | 13.5 tok/s | 11.7 tok/s | 0.87× | 1.46 (raw) |
-| Gemma4-12B | 8-bit | 22 tok/s | 14 tok/s | 0.63× | 1.37 |
+| **Gemma4-12B-it** | bf16 | 13.0 tok/s | 26.8 tok/s | **2.06×** | **5.24** (chat) |
+| Gemma4-12B (base/pretrained) | bf16 | 13.5 tok/s | 11.7 tok/s | 0.87× | 1.46 (raw) |
 
-DSpark wins only when the base is **memory-bound at the verify block size** — true for 4B
-bf16, not for a 12B (multi-token verify goes compute-bound) or quantized bases (base too
-cheap to amortize the draft).
+**Speedup is driven by acceptance length.** High acceptance amortizes the base forward over
+more tokens, so an *expensive* base (12B) gives the *bigger* win when acceptance is high
+(Gemma4-12B-it: 5.24 accepted/block → 2.06×). The Gemma `(base/pretrained)` row is the wrong
+target — the DSpark draft is trained for the deployed **instruct** model, and a pretrained base
+(no chat template) gives ~3× lower acceptance. **8-bit bases lose** (Qwen3 0.75×) because
+quantization both cheapens the base *and* lowers acceptance (quantized hiddens diverge from the
+draft's bf16 training).
 
 ## Acceptance length vs the DSpark paper
 
@@ -28,19 +32,22 @@ cheap to amortize the draft).
 greedy). The paper reports DSpark = **Eagle3 + ~30%**; Eagle3 on GSM8K is ~3–3.5, so DSpark's
 expected band is ~4–4.5 (math), lower for code.
 
-| model | dataset | τ (macro) | acceptance rate | notes |
+| model | dataset | τ (micro) | acceptance rate | notes |
 |---|---|---|---|---|
-| Qwen3-4B | GSM8K (math, chat) | **3.91** | 41% | in DSpark's expected band ✓ |
-| Qwen3-4B | MBPP (code, chat) | **3.25** | 31% | math > code, as expected ✓ |
-| Gemma4-12B | GSM8K (raw) | ~2.5 | 21% | base has no chat template — see below |
+| Qwen3-4B | GSM8K (math, chat) | **3.86** | 41% | in DSpark's expected band ✓ |
+| Qwen3-4B | MBPP (code, chat) | **3.20** | 31% | math > code, as expected ✓ |
+| **Gemma4-12B-it** | GSM8K (math, chat) | **5.84** | **69%** | matches/exceeds the paper ✓ |
+| Gemma4-12B (base) | GSM8K (raw) | ~2.5 | 21% | wrong target — pretrained, no chat template |
 
-**Qwen3 matches the paper.** The loop/recipe/verify/accept are shared across arches, so this
+**Both arches match the paper.** DSpark's expected band is Eagle3 (~3–3.5 on GSM8K) +30%.
+Qwen3-4B lands at 3.86; Gemma4-12B-it at 5.84 (a 12B instruct base is more predictable and the
+draft has more capacity). The loop/recipe/verify/accept are shared across arches, so this
 validates the whole port.
 
-**Gemma4 reads low** — but it went 1% → 21% once the embed-scaling bug was fixed, so it is
-structurally correct. The remaining gap is most likely a **pairing/prompt confound**: the
-pretrained `gemma-4-12b` base (no chat template) is the wrong analog to instruct Qwen3-4B; the
-DSpark draft most likely targets `gemma-4-12b-it`. Verification with the `-it` base is pending.
+The Gemma `(base)` row was the wrong target: it went 1% → 21% once the embed-scaling bug was
+fixed (structurally correct), but a *pretrained* base (no chat template) gives ~3× lower
+acceptance than the deployed instruct model the draft is trained for. Switching to
+`gemma-4-12b-it` with its chat template took it to 5.84 / 69%.
 
 ## Key findings
 
