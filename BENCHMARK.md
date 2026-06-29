@@ -11,25 +11,33 @@ nondeterminism, not loss). Decode loop = `generate_eager` (one base forward per 
 > (51–400% throughput, 60–85% per-user). These Metal single-stream numbers are not directly
 > comparable; the comparable metric is acceptance length (below).
 
-| model | precision | base greedy | DSpark | speedup | accepted/block (prompt) |
-|---|---|---|---|---|---|
-| Qwen3-4B | bf16 | 37 tok/s | 42 tok/s | 1.17× | 2.49 (chat, thinking on) |
-| Qwen3-4B | 8-bit | 69 tok/s | 52 tok/s | 0.75× | 2.24 |
-| **Qwen3-14B** | bf16 | 11.4 tok/s | 22.5 tok/s | **1.98×** | 4.72 (chat, no-think) |
-| **Gemma4-12B-it** | bf16 | 13.0 tok/s | 26.8 tok/s | **2.06×** | 5.24 (chat) |
-| Gemma4-12B (base/pretrained) | bf16 | 13.5 tok/s | 11.7 tok/s | 0.87× | 1.46 (raw) |
+One consistent protocol: GSM8K-style chat prompt, greedy, `--no-think` (Qwen3), eager loop,
+lossless. **Base precision** and **draft precision** are independent (`--quant-draft`).
 
-**Two orthogonal knobs.** *Acceptance length* is set by the **draft + task** (and is roughly
-**size-independent** within a family — Qwen3-4B and 14B give the same ~3.8 / ~6.3 accepted
-length, thinking on / off). *Speedup* is set by how **expensive the base** is: a costlier base
-amortizes the fixed draft + verify overhead better, so at similar acceptance the bigger model
-wins — Qwen3-4B 1.17× → Qwen3-14B 1.98× → Gemma4-12B-it 2.06×.
+| model | base prec | draft prec | base greedy | DSpark | speedup | acc/blk |
+|---|---|---|---|---|---|---|
+| Qwen3-4B | bf16 | bf16 | 37 tok/s | 47 tok/s | 1.26× | 2.9 |
+| Qwen3-4B | bf16 | **q8** | 37 tok/s | 62 tok/s | **1.67×** | 2.9 |
+| Qwen3-4B | 8-bit | bf16 | 62 tok/s | 83 tok/s | 1.34× | 4.3 |
+| Qwen3-4B | 8-bit | **q8** | 62 tok/s | 101 tok/s | **1.62×** | 4.3 |
+| **Qwen3-14B** | bf16 | bf16 | 12.3 tok/s | 25.4 tok/s | 2.07× | 4.4 |
+| **Qwen3-14B** | bf16 | **q8** | 12.4 tok/s | 29.1 tok/s | **2.36×** | 4.4 |
+| **Gemma4-12B-it** | bf16 | bf16 | 13.8 tok/s | 23.6 tok/s | 1.71× | 4.0 |
+| **Gemma4-12B-it** | bf16 | **q8** | 13.9 tok/s | 26.0 tok/s | **1.87×** | 4.0 |
 
-The Gemma `(base/pretrained)` row is the wrong target — the DSpark draft is trained for the
-deployed **instruct** model, and a pretrained base (no chat template) gives ~3× lower acceptance.
-The early "8-bit base loses (0.75×)" result was a **thinking-on artifact** (low acceptance) plus
-the bf16-draft cost — with `--no-think` and a quantized draft the 8-bit base *wins* (1.51×, see
-below).
+(q4 draft is ~similar to q8 but ~3–7% lower acceptance — see *Quantizing the drafter*. Speedup
+is prompt-dependent via acceptance; higher-acceptance prompts go higher, e.g. Gemma4-12B-it
+reaches 2.06× on a longer reasoning prompt.)
+
+**Three knobs.** (1) *Acceptance length* — set by the **draft + task**, roughly **size-independent**
+within a family (Qwen3-4B ≈ 14B). (2) *Base precision / size* — a costlier base amortizes the
+fixed draft + verify overhead better, so at similar acceptance the bigger/heavier base wins
+(Qwen3-4B 1.26× → 14B 2.07×); a *cheaper* (8-bit) base wins less. (3) *Draft precision* — an 8-bit
+draft is acceptance-lossless and ~2× cheaper, adding ~10–20% on top of any base (q8 column).
+
+The "8-bit base loses 0.75×" headline from earlier was a **thinking-on artifact** (low acceptance)
+plus the bf16-draft cost — with `--no-think` and a **q8 draft** the 8-bit base reaches **1.62×**.
+(Separately, the *pretrained* Gemma base is the wrong target — see the acceptance section.)
 
 ## Quantizing the drafter
 
