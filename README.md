@@ -38,7 +38,7 @@ for event in generate(adapter, drafter, prompt_tokens, max_new_tokens):
 Lossless speedup on Apple Silicon (eager loop, greedy) and average **accepted length**
 (τ = tokens per verify step) vs the DSpark paper — the hardware-independent metric the paper
 reports. Both backbones land in the paper's acceptance band. Full methodology, all precisions,
-and findings in **[BENCHMARK.md](BENCHMARK.md)**.
+and findings in **[BENCHMARK.md](https://github.com/popfido/dspark-mlx/blob/main/BENCHMARK.md)**.
 
 | model | accepted length (GSM8K) | acceptance rate | speedup |
 |---|---|---|---|
