@@ -147,11 +147,13 @@ def main() -> None:
     print(f"loading {args.arch} base ({args.precision}) + draft ...", flush=True)
     model, tokenizer, adapter = _load_base(args.arch, args.precision)
     drafter = _load_drafter(args.arch)
-    if args.chat:
+    if args.chat and getattr(tokenizer, "chat_template", None):
         prompt_ids = tokenizer.apply_chat_template(
             [{"role": "user", "content": args.prompt}], add_generation_prompt=True, tokenize=True
         )
     else:
+        if args.chat:
+            print("  (no chat template on this tokenizer -- using raw prompt)")
         prompt_ids = tokenizer.encode(args.prompt)
 
     if args.warmup:

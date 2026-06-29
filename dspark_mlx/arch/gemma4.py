@@ -117,6 +117,32 @@ class Gemma4DSparkAttention(nn.Module):
         out = out.transpose(0, 2, 1, 3).reshape(b, q, self.nh * self.hd)
         return self.o_proj(out)
 
+    # --- cached path (Phase 3b): context K/V precomputed once, reused every block ---
+    def context_kv(self, proj_ctx: mx.array, cos: mx.array, sin: mx.array):
+        b, n, _ = proj_ctx.shape
+        kc = self.k_proj(proj_ctx)
+        vc = kc if self.k_eq_v else self.v_proj(proj_ctx)
+        k = self.k_norm(kc.reshape(b, n, self.nkv, self.hd))
+        v = self.v_norm(vc.reshape(b, n, self.nkv, self.hd))
+        k = _apply_rope(k, cos, sin)  # v is not rotated
+        return k.transpose(0, 2, 1, 3), v.transpose(0, 2, 1, 3)
+
+    def attend_cached(self, noise, ctx_k, ctx_v, cos, sin):
+        b, q, _ = noise.shape
+        qh = self.q_norm(self.q_proj(noise).reshape(b, q, self.nh, self.hd))
+        kn = self.k_proj(noise)
+        vn = kn if self.k_eq_v else self.v_proj(noise)
+        nk = self.k_norm(kn.reshape(b, q, self.nkv, self.hd))
+        nv = self.v_norm(vn.reshape(b, q, self.nkv, self.hd))
+        qh = _apply_rope(qh, cos, sin).transpose(0, 2, 1, 3)
+        nk = _apply_rope(nk, cos, sin).transpose(0, 2, 1, 3)
+        nv = nv.transpose(0, 2, 1, 3)
+        k = nk if ctx_k is None else mx.concatenate([ctx_k, nk], axis=2)
+        v = nv if ctx_v is None else mx.concatenate([ctx_v, nv], axis=2)
+        out = mx.fast.scaled_dot_product_attention(qh, k, v, scale=1.0, mask=None)
+        out = out.transpose(0, 2, 1, 3).reshape(b, q, self.nh * self.hd)
+        return self.o_proj(out)
+
 
 class Gemma4MLP(nn.Module):
     def __init__(self, args: Gemma4DSparkArgs):
@@ -143,6 +169,16 @@ class Gemma4DSparkLayer(nn.Module):
 
     def __call__(self, hidden: mx.array, target_ctx: mx.array, cos: mx.array, sin: mx.array) -> mx.array:
         h = self.post_attention_layernorm(self.self_attn(self.input_layernorm(hidden), target_ctx, cos, sin))
+        hidden = hidden + h
+        h = self.post_feedforward_layernorm(self.mlp(self.pre_feedforward_layernorm(hidden)))
+        hidden = hidden + h
+        return hidden * self.layer_scalar
+
+    def context_kv(self, proj_ctx: mx.array, cos: mx.array, sin: mx.array):
+        return self.self_attn.context_kv(proj_ctx, cos, sin)
+
+    def forward_cached(self, hidden, ctx_k, ctx_v, cos, sin) -> mx.array:
+        h = self.post_attention_layernorm(self.self_attn.attend_cached(self.input_layernorm(hidden), ctx_k, ctx_v, cos, sin))
         hidden = hidden + h
         h = self.post_feedforward_layernorm(self.mlp(self.pre_feedforward_layernorm(hidden)))
         hidden = hidden + h
@@ -185,12 +221,63 @@ class Gemma4DSparkDrafter(nn.Module):
     def reset(self) -> None:
         self._ctx = None
         self._next_pos = 0
+        self._ctx_k = None      # per-layer cached context K (eager path)
+        self._ctx_v = None
+        self._committed = 0
 
     def _project_one(self, main_hidden: mx.array) -> mx.array:
         return self.backbone.project_context(main_hidden.reshape(main_hidden.shape[0], 1, -1))
 
     def _rope(self, length: int):
         return rope_tables(mx.arange(length), self.args.head_dim, self.args.rope_theta, self.args.partial_rotary_factor)
+
+    def _softcap(self, logits: mx.array) -> mx.array:
+        sc = self.args.final_logit_softcapping
+        return mx.tanh(logits / sc) * sc if sc else logits
+
+    def _embed(self, ids: mx.array) -> mx.array:
+        """Gemma scales token embeddings by sqrt(hidden) (Gemma4TextScaledWordEmbedding)."""
+        e = self.embed_tokens(ids)
+        return e * mx.array(self.args.hidden_size ** 0.5, dtype=e.dtype)
+
+    # --- reference-matched eager interface (see qwen3.py for the rationale) ---
+
+    def extend_context(self, new_hiddens: mx.array) -> None:
+        n = new_hiddens.shape[1]
+        if n == 0:
+            return
+        proj = self.backbone.project_context(new_hiddens)
+        pos = mx.arange(self._committed, self._committed + n)
+        cos, sin = rope_tables(pos, self.args.head_dim, self.args.rope_theta, self.args.partial_rotary_factor)
+        layers = self.backbone.layers
+        if self._ctx_k is None:
+            self._ctx_k = [None] * len(layers)
+            self._ctx_v = [None] * len(layers)
+        for i, layer in enumerate(layers):
+            k, v = layer.context_kv(proj, cos, sin)
+            self._ctx_k[i] = k if self._ctx_k[i] is None else mx.concatenate([self._ctx_k[i], k], axis=2)
+            self._ctx_v[i] = v if self._ctx_v[i] is None else mx.concatenate([self._ctx_v[i], v], axis=2)
+        self._committed += n
+
+    def draft(self, anchor_token: mx.array):
+        b = anchor_token.shape[0]
+        start = self._committed
+        anchor = anchor_token.astype(mx.int32).reshape(b, 1)
+        noise = mx.full((b, self.block_size - 1), self.args.mask_token_id, dtype=mx.int32)
+        noise_embed = self._embed(mx.concatenate([anchor, noise], axis=1))
+        block_pos = mx.arange(start, start + self.block_size)
+        cos, sin = rope_tables(block_pos, self.args.head_dim, self.args.rope_theta, self.args.partial_rotary_factor)
+        h = noise_embed
+        ck = self._ctx_k or [None] * len(self.backbone.layers)
+        cv = self._ctx_v or [None] * len(self.backbone.layers)
+        for i, layer in enumerate(self.backbone.layers):
+            h = layer.forward_cached(h, ck[i], cv[i], cos, sin)
+        block_hidden = self.backbone.norm(h)
+        logits = self._softcap(self.lm_head(block_hidden.astype(mx.float32)))
+        return draft_block_decode(
+            logits, block_hidden, anchor_token, self.markov_head, self.confidence_head,
+            self.block_size, self.temperature,
+        )
 
     def forward_spec(self, input_ids: mx.array, main_hidden: mx.array, start_pos: int = 0):
         if start_pos == 0:
@@ -203,7 +290,7 @@ class Gemma4DSparkDrafter(nn.Module):
         b = input_ids.shape[0]
         anchor = input_ids.astype(mx.int32).reshape(b, 1)
         noise = mx.full((b, self.block_size - 1), self.args.mask_token_id, dtype=mx.int32)
-        noise_embed = self.embed_tokens(mx.concatenate([anchor, noise], axis=1))
+        noise_embed = self._embed(mx.concatenate([anchor, noise], axis=1))
         cos, sin = self._rope(self._ctx.shape[1] + self.block_size)
         block_hidden = self.backbone(noise_embed, self._ctx, cos, sin)
         logits = self.lm_head(block_hidden.astype(mx.float32))

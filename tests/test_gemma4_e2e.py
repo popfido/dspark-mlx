@@ -131,6 +131,21 @@ def test_gemma4_generate_is_lossless() -> None:
     assert tokens == _plain_greedy(transition, int(prompt[0, -1]), 20)
 
 
+def test_gemma4_eager_loop_is_lossless() -> None:
+    """The reference-matched eager loop + cached gemma4 draft path stays lossless."""
+    from dspark_mlx.loop import generate_eager
+
+    rng = np.random.default_rng(0)
+    drafter = resolve_arch(GCFG).build(GCFG, max_seq_len=128)
+    transition = rng.standard_normal((VOCAB, VOCAB)).astype(np.float32)
+    embed = (rng.standard_normal((VOCAB, FC_IN)) * 0.1).astype(np.float32)
+    adapter = MarkovAdapter(transition, embed)
+    prompt = rng.integers(0, VOCAB, size=(1, 6)).astype(np.int32)
+    tokens = [e.token for e in generate_eager(adapter, drafter, prompt, max_new_tokens=20)
+              if isinstance(e, TokenEvent)]
+    assert tokens == _plain_greedy(transition, int(prompt[0, -1]), 20)
+
+
 @pytest.mark.skipif(not os.path.exists(_CKPT), reason="real gemma4 draft checkpoint not present")
 def test_gemma4_real_weights_load_and_run() -> None:
     try:
