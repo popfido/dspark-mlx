@@ -115,6 +115,33 @@ class Qwen3DSparkAttention(nn.Module):
         out = out.transpose(0, 2, 1, 3).reshape(b, q, self.nh * self.hd)
         return self.o_proj(out)
 
+    # --- cached path (Phase 3b): context K/V are precomputed once and reused every block ---
+    # k_norm + RoPE are position-wise, so caching post-RoPE context K/V is exactly equivalent
+    # to recomputing k_proj/v_proj over the whole context each block.
+
+    def context_kv(self, proj_ctx: mx.array, cos: mx.array, sin: mx.array):
+        """Project committed context [b, n, hidden] -> RoPE'd K, V [b, nkv, n, hd] for the cache."""
+        b, n, _ = proj_ctx.shape
+        k = self.k_norm(self.k_proj(proj_ctx).reshape(b, n, self.nkv, self.hd))
+        v = self.v_proj(proj_ctx).reshape(b, n, self.nkv, self.hd)
+        k = _apply_rope(k, cos, sin)
+        return k.transpose(0, 2, 1, 3), v.transpose(0, 2, 1, 3)
+
+    def attend_cached(self, noise, ctx_k, ctx_v, cos, sin):
+        """Attend the noise block over [cached context K/V ‖ this block]."""
+        b, q, _ = noise.shape
+        qh = self.q_norm(self.q_proj(noise).reshape(b, q, self.nh, self.hd))
+        nk = self.k_norm(self.k_proj(noise).reshape(b, q, self.nkv, self.hd))
+        nv = self.v_proj(noise).reshape(b, q, self.nkv, self.hd)
+        qh = _apply_rope(qh, cos, sin).transpose(0, 2, 1, 3)
+        nk = _apply_rope(nk, cos, sin).transpose(0, 2, 1, 3)
+        nv = nv.transpose(0, 2, 1, 3)
+        k = nk if ctx_k is None else mx.concatenate([ctx_k, nk], axis=2)
+        v = nv if ctx_v is None else mx.concatenate([ctx_v, nv], axis=2)
+        out = mx.fast.scaled_dot_product_attention(qh, k, v, scale=self.scale, mask=None)
+        out = out.transpose(0, 2, 1, 3).reshape(b, q, self.nh * self.hd)
+        return self.o_proj(out)
+
 
 class Qwen3MLP(nn.Module):
     def __init__(self, args: Qwen3DSparkArgs):
@@ -137,6 +164,15 @@ class Qwen3DSparkLayer(nn.Module):
 
     def __call__(self, hidden: mx.array, target_ctx: mx.array, cos: mx.array, sin: mx.array) -> mx.array:
         hidden = hidden + self.self_attn(self.input_layernorm(hidden), target_ctx, cos, sin)
+        return hidden + self.mlp(self.post_attention_layernorm(hidden))
+
+    # cached path: context K/V come from the global projected context (no input_layernorm);
+    # only the noise block runs through input_layernorm, matching the reference layer.
+    def context_kv(self, proj_ctx: mx.array, cos: mx.array, sin: mx.array):
+        return self.self_attn.context_kv(proj_ctx, cos, sin)
+
+    def forward_cached(self, hidden, ctx_k, ctx_v, cos, sin) -> mx.array:
+        hidden = hidden + self.self_attn.attend_cached(self.input_layernorm(hidden), ctx_k, ctx_v, cos, sin)
         return hidden + self.mlp(self.post_attention_layernorm(hidden))
 
 
@@ -197,7 +233,9 @@ class Qwen3DSparkDrafter(nn.Module):
     def reset(self) -> None:
         self._ctx = None        # [b, ctx_len, hidden] projected target context (legacy forward_spec path)
         self._next_pos = 0
-        self._ctx_raw = None    # [b, ctx_len, fc_in] raw committed target hiddens (eager path)
+        self._ctx_k = None      # per-layer cached context K [b, nkv, ctx_len, hd] (eager path)
+        self._ctx_v = None
+        self._committed = 0     # committed context length (excludes the live anchor)
 
     def _project_one(self, main_hidden: mx.array) -> mx.array:
         return self.backbone.project_context(main_hidden.reshape(main_hidden.shape[0], 1, -1))
@@ -240,23 +278,38 @@ class Qwen3DSparkDrafter(nn.Module):
     # and shifted the block to start+1.
 
     def extend_context(self, new_hiddens: mx.array) -> None:
-        """Append raw target hiddens [b, n, fc_in] of newly committed positions."""
-        self._ctx_raw = (
-            new_hiddens if self._ctx_raw is None
-            else mx.concatenate([self._ctx_raw, new_hiddens], axis=1)
-        )
+        """Project newly committed positions [b, n, fc_in] once and append to each layer's K/V cache."""
+        n = new_hiddens.shape[1]
+        if n == 0:
+            return
+        proj = self.backbone.project_context(new_hiddens)  # global hidden_norm(fc(.)), shared by all layers
+        pos = mx.arange(self._committed, self._committed + n)
+        cos, sin = rope_tables(pos, self.args.head_dim, self.args.rope_theta)
+        layers = self.backbone.layers
+        if self._ctx_k is None:
+            self._ctx_k = [None] * len(layers)
+            self._ctx_v = [None] * len(layers)
+        for i, layer in enumerate(layers):
+            k, v = layer.context_kv(proj, cos, sin)
+            self._ctx_k[i] = k if self._ctx_k[i] is None else mx.concatenate([self._ctx_k[i], k], axis=2)
+            self._ctx_v[i] = v if self._ctx_v[i] is None else mx.concatenate([self._ctx_v[i], v], axis=2)
+        self._committed += n
 
     def draft(self, anchor_token: mx.array):
-        """Draft a block from the committed context; anchor is the query at position `start`."""
+        """Draft a block from the cached context; anchor is the query at position `start`."""
         b = anchor_token.shape[0]
-        start = 0 if self._ctx_raw is None else self._ctx_raw.shape[1]
-        ctx = self.backbone.project_context(self._ctx_raw)
+        start = self._committed
         anchor = anchor_token.astype(mx.int32).reshape(b, 1)
         noise = mx.full((b, self.block_size - 1), self.args.mask_token_id, dtype=mx.int32)
         noise_embed = self.embed_tokens(mx.concatenate([anchor, noise], axis=1))
-        full_pos = mx.arange(start + self.block_size)  # ctx [0..start-1] ‖ block [start..]
-        cos, sin = rope_tables(full_pos, self.args.head_dim, self.args.rope_theta)
-        block_hidden = self.backbone(noise_embed, ctx, cos, sin)
+        block_pos = mx.arange(start, start + self.block_size)  # block at its own absolute positions
+        cos, sin = rope_tables(block_pos, self.args.head_dim, self.args.rope_theta)
+        h = noise_embed
+        ck = self._ctx_k or [None] * len(self.backbone.layers)
+        cv = self._ctx_v or [None] * len(self.backbone.layers)
+        for i, layer in enumerate(self.backbone.layers):
+            h = layer.forward_cached(h, ck[i], cv[i], cos, sin)
+        block_hidden = self.backbone.norm(h)
         logits = self.lm_head(block_hidden.astype(mx.float32))
         return draft_block_decode(
             logits, block_hidden, anchor_token, self.markov_head, self.confidence_head,
