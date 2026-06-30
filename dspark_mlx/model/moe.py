@@ -7,8 +7,14 @@
 The DSpark mtp blocks sit at layer ids >= ``n_hash_layers``, so they use score routing
 (``sqrtsoftplus`` gate + bias-shifted top-k), not hash routing — both modes are ported for
 completeness. The expert combine here is dense (every expert evaluated, then masked by the
-routing weight): numerically exact and simple, but O(num_experts). Sparse ``gather_mm``
-dispatch for the real 256-expert checkpoint is a separate perf task (see P4).
+routing weight): numerically exact and simple, but O(num_experts).
+
+A sparse ``gather_mm`` dispatch (only the top-k routed experts/token) is validated in
+``_repro/moe_gather_mm_sim.py`` at the real DeepSeek-V4 draft dims — **parity-exact** and
+**6.5–82× faster** (30× at the M=5 draft block; the win shrinks with M as the dense matmuls
+get GPU-efficient). Wiring it in needs stacked ``[E, …]`` expert weights (the checkpoint stores
+per-expert ``ffn.experts.{e}.*`` keys), so it is a storage + weight-loader change, not a local
+edit here; the DeepSeek-V4 draft can't be run locally, so it is parity-tested, not e2e-tested.
 """
 
 from __future__ import annotations
