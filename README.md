@@ -31,7 +31,7 @@ One DSpark recipe, three base-model backbones — selected by `model_type` via t
 
 | Backbone | Checkpoint | Draft layer body |
 |---|---|---|
-| `deepseek_v4` | `DeepSeek-V4-Flash-DSpark` (bundled fp8/fp4, `mtp.*`) | MLA + hash-MoE + Hyper-Connections + windowed sparse attn |
+| `deepseek_v4` | `DeepSeek-V4-{Flash,Pro}-DSpark` (bundled fp8/fp4, `mtp.*`) | MLA + hash-MoE + Hyper-Connections + windowed sparse attn |
 | `qwen3` | `dspark_qwen3_{4b,8b,14b}_block7` (standalone bf16, `layers.*`) | Qwen3 GQA + QK-norm + SwiGLU |
 | `gemma4` | `dspark_gemma4_12b_block7` (standalone bf16, `layers.*`) | Gemma4 GQA (K=V) + sandwich norms + GeGLU + partial RoPE + softcap |
 
@@ -70,7 +70,7 @@ Qwen3-14B 2.07× → **2.36×** (see BENCHMARK.md for the base×draft-precision 
 target the deployed **instruct** model (the pretrained Gemma base gives ~3× lower acceptance);
 Qwen3's `<think>` traces roughly halve acceptance vs `--no-think`.
 
-Based on `deepseek-ai/DeepSeek-V4-Flash-DSpark` and the DeepSpec codebase (`dspark/*`).
+Based on `deepseek-ai/DeepSeek-V4-{Flash,Pro}-DSpark` and the DeepSpec codebase (`dspark/*`).
 Repo structure mirrors `dflash-mlx`.
 
 Status: the full draft→verify→accept pipeline is verified against the reference for all

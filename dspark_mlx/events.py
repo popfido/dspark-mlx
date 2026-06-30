@@ -1,6 +1,6 @@
 # Copyright 2026 popfido
 # Licensed under the Apache License, Version 2.0 - see LICENSE file
-# Based on DeepSeek DSpark (DeepSeek-V4-Flash-DSpark, deepseek-ai/DeepSpec)
+# Based on DeepSeek DSpark (DeepSeek-V4-Flash/Pro-DSpark, deepseek-ai/DeepSpec)
 
 """Stream events emitted by the generate loop (mirrors dflash-mlx's event surface)."""
 

@@ -1,12 +1,17 @@
 # Copyright 2026 popfido
 # Licensed under the Apache License, Version 2.0 - see LICENSE file
-# Based on DeepSeek DSpark (DeepSeek-V4-Flash-DSpark, deepseek-ai/DeepSpec)
+# Based on DeepSeek DSpark (DeepSeek-V4-Flash/Pro-DSpark, deepseek-ai/DeepSpec)
 
-"""DeepSeek-V4-Flash-DSpark backbone descriptor.
+"""DeepSeek-V4-{Flash,Pro}-DSpark backbone descriptor.
 
 The windowed MLA + hash-MoE + Hyper-Connections realization, drafting from the ``mtp.*``
 namespace of the bundled fp8/fp4 checkpoint. The model code lives under ``dspark_mlx.model``
 (its parity tests pin it); this module just registers it as a DraftArch.
+
+Both the **Flash** and the larger **Pro** checkpoints share this exact draft architecture —
+Pro only scales the dims (``DSparkArgs.from_dict`` absorbs them) and adds DeepSeek Sparse
+Attention (the indexer/compressor) to its *base* layers; the draft excludes it (the reference
+``DSparkAttention`` asserts ``compress_ratio == 0``), so the same descriptor covers both.
 """
 
 from __future__ import annotations

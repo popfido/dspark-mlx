@@ -1,6 +1,6 @@
 # Copyright 2026 popfido
 # Licensed under the Apache License, Version 2.0 - see LICENSE file
-# Based on DeepSeek DSpark (DeepSeek-V4-Flash-DSpark, deepseek-ai/DeepSpec)
+# Based on DeepSeek DSpark (DeepSeek-V4-Flash/Pro-DSpark, deepseek-ai/DeepSpec)
 
 """DSparkDrafter: the full draft stack (``inference/model.py`` Transformer.forward_spec).
 

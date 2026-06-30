@@ -1,6 +1,6 @@
 # Copyright 2026 popfido
 # Licensed under the Apache License, Version 2.0 - see LICENSE file
-# Based on DeepSeek DSpark (DeepSeek-V4-Flash-DSpark, deepseek-ai/DeepSpec)
+# Based on DeepSeek DSpark (DeepSeek-V4-Flash/Pro-DSpark, deepseek-ai/DeepSpec)
 
 """Host adapter for ``google/gemma-4-12b`` (a multimodal ``gemma4_unified`` model) via mlx-vlm.
 

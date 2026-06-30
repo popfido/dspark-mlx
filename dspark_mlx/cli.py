@@ -1,6 +1,6 @@
 # Copyright 2026 popfido
 # Licensed under the Apache License, Version 2.0 - see LICENSE file
-# Based on DeepSeek DSpark (DeepSeek-V4-Flash-DSpark, deepseek-ai/DeepSpec)
+# Based on DeepSeek DSpark (DeepSeek-V4-Flash/Pro-DSpark, deepseek-ai/DeepSpec)
 
 """``dspark`` command line: run / benchmark / evaluate DSpark speculative decoding.
 
@@ -74,10 +74,13 @@ def _run_dspark(adapter, drafter, ids: List[int], n: int, eos: Optional[int]):
 
 
 def cmd_models(_args) -> None:
-    print(f"{'name':12s}  draft  +  base (deployed instruct)")
+    print(f"{'name':18s}  draft  +  base (deployed instruct)")
     for name, (draft, base) in KNOWN_MODELS.items():
-        print(f"{name:12s}  {draft}  +  {base}")
+        print(f"{name:18s}  {draft}  +  {base}")
     print("\nGemma bases are gemma4_unified (multimodal); the text tower loads via mlx-vlm (bundled).")
+    print("DeepSeek-V4 (flash/pro) bundles the draft (mtp.*) inside the fp8/fp4 base; only the shards "
+          "holding mtp.*/embed/head are fetched. Draft load only for now (no host adapter — the base "
+          "is unrunnable on a single machine).")
 
 
 def cmd_generate(args) -> None:
