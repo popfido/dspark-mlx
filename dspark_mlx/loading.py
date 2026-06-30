@@ -21,7 +21,7 @@ DeepSeek-V4 base model); this module owns the DSpark-specific mapping + dequant 
 from __future__ import annotations
 
 import re
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import mlx.core as mx
 import numpy as np
@@ -31,6 +31,8 @@ from .model.drafter import DSparkDrafter
 
 _MTP_RE = re.compile(r"mtp\.(\d+)\.(.+)$")
 _BLOCKS_RE = re.compile(r"blocks\.(\d+)\.(.+)$")
+# Per-expert drafter path -> stacked MoE param: blocks.N.ffn.experts.{e}.wK.weight -> blocks.N.ffn.wK
+_EXPERT_PATH_RE = re.compile(r"^(.*\.ffn)\.experts\.(\d+)\.(w[123])\.weight$")
 
 # Keys that distinguish a DSpark checkpoint from a vanilla DeepSeek native-MTP checkpoint
 # (both write mtp.*, but only DSpark adds these).
@@ -78,8 +80,24 @@ def load_drafter(
             skipped.append(key)
             continue
         params[path] = value if isinstance(value, mx.array) else mx.array(value)
+    _stack_moe_experts(params)
     drafter.update(tree_unflatten(list(params.items())))
     return skipped
+
+
+def _stack_moe_experts(params: Dict[str, mx.array]) -> None:
+    """Collapse per-expert MoE weights into the stacked ``[E, out, in]`` params the model holds.
+
+    The checkpoint stores ``...ffn.experts.{e}.{w1,w2,w3}.weight`` (one per expert); the model's
+    :class:`~dspark_mlx.model.moe.MoE` stores them stacked as ``...ffn.{w1,w2,w3}``. Stacks in
+    ascending expert-id order so row ``e`` is expert ``e``. No-op for archs without MoE experts.
+    """
+    groups: Dict[Tuple[str, str], Dict[int, mx.array]] = {}
+    for key in [k for k in params if _EXPERT_PATH_RE.match(k)]:
+        m = _EXPERT_PATH_RE.match(key)
+        groups.setdefault((m.group(1), m.group(3)), {})[int(m.group(2))] = params.pop(key)
+    for (prefix, wk), by_eid in groups.items():
+        params[f"{prefix}.{wk}"] = mx.stack([by_eid[e] for e in sorted(by_eid)], axis=0)
 
 
 def dequant_fp8_blockwise(weight: np.ndarray, scale: np.ndarray, block: int = 128) -> np.ndarray:

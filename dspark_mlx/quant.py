@@ -23,11 +23,15 @@ from __future__ import annotations
 import mlx.core as mx
 import mlx.nn as nn
 
+from .model.moe import MoE
+
 
 def quantize_drafter(drafter: nn.Module, bits: int = 8, group_size: int = 64) -> nn.Module:
     """Quantize every compatible Linear + Embedding in the drafter to ``bits``. Layers whose
     quantized dimension isn't a multiple of ``group_size`` (e.g. tiny heads) are skipped
-    gracefully. Mutates and returns ``drafter``."""
+    gracefully. The DeepSeek-V4 draft's MoE keeps its routed experts as stacked arrays (not
+    ``nn.Linear``), so ``nn.quantize`` skips them — they are quantized via the MoE's own
+    ``gather_qmm`` path. Mutates and returns ``drafter``."""
 
     def predicate(_path: str, module: nn.Module):
         if not isinstance(module, (nn.Linear, nn.Embedding)):
@@ -35,5 +39,8 @@ def quantize_drafter(drafter: nn.Module, bits: int = 8, group_size: int = 64) ->
         return module.weight.shape[-1] % group_size == 0
 
     nn.quantize(drafter, group_size=group_size, bits=bits, class_predicate=predicate)
+    for _name, module in drafter.named_modules():
+        if isinstance(module, MoE) and module.quant is None:
+            module.quantize(bits=bits, group_size=group_size)
     mx.eval(drafter.parameters())
     return drafter

@@ -106,14 +106,23 @@ def _copy_moe(ref, mlx, args, rng):
     mlx.gate.weight = mx.array(gw)
     mlx.gate.bias = mx.array(gb)
 
-    def cp_expert(re, me):
-        for name, shape in (("w1", (inter, dim)), ("w2", (dim, inter)), ("w3", (inter, dim))):
+    shapes = (("w1", (inter, dim)), ("w2", (dim, inter)), ("w3", (inter, dim)))
+
+    def cp_expert(re, me):  # shared expert: me is an mlx Expert module
+        for name, shape in shapes:
             w = (rng.standard_normal(shape) * 0.1).astype(np.float32)
             getattr(re, name).weight.data = torch.tensor(w)
             getattr(me, name).weight = mx.array(w)
 
+    # routed experts: per-expert into the torch ref, stacked into the mlx MoE ([E, out, in])
+    stacks = {"w1": [], "w2": [], "w3": []}
     for i in range(e_count):
-        cp_expert(ref.experts[i], mlx.experts[i])
+        for name, shape in shapes:
+            w = (rng.standard_normal(shape) * 0.1).astype(np.float32)
+            getattr(ref.experts[i], name).weight.data = torch.tensor(w)
+            stacks[name].append(w)
+    for name in ("w1", "w2", "w3"):
+        setattr(mlx, name, mx.array(np.stack(stacks[name])))
     cp_expert(ref.shared_experts, mlx.shared_experts)
 
 

@@ -73,6 +73,7 @@ def test_rope_inverse_roundtrips() -> None:
 
 
 def _set_expert(ref_e, mlx_e, rng, inter, dim) -> None:
+    """Copy one expert's weights into a torch ref + an mlx Expert module (the shared expert)."""
     import torch
 
     for name in ("w1", "w2", "w3"):
@@ -80,6 +81,21 @@ def _set_expert(ref_e, mlx_e, rng, inter, dim) -> None:
         w = (rng.standard_normal(out_in) * 0.1).astype(np.float32)
         getattr(ref_e, name).weight.data = torch.tensor(w)
         getattr(mlx_e, name).weight = mx.array(w)
+
+
+def _set_routed_experts(ref, mlx, rng, e_count, inter, dim) -> None:
+    """Copy the routed experts: per-expert into the torch ref, stacked into the mlx MoE."""
+    import torch
+
+    stacks = {"w1": [], "w2": [], "w3": []}
+    for i in range(e_count):
+        for name in ("w1", "w2", "w3"):
+            out_in = (inter, dim) if name in ("w1", "w3") else (dim, inter)
+            w = (rng.standard_normal(out_in) * 0.1).astype(np.float32)
+            getattr(ref.experts[i], name).weight.data = torch.tensor(w)
+            stacks[name].append(w)
+    for name in ("w1", "w2", "w3"):
+        setattr(mlx, name, mx.array(np.stack(stacks[name])))
 
 
 @needs_ref
@@ -105,8 +121,7 @@ def test_moe_parity() -> None:
     ref.gate.bias.data = torch.tensor(gate_b)
     mlx.gate.weight = mx.array(gate_w)
     mlx.gate.bias = mx.array(gate_b)
-    for i in range(e_count):
-        _set_expert(ref.experts[i], mlx.experts[i], rng, inter, dim)
+    _set_routed_experts(ref, mlx, rng, e_count, inter, dim)
     _set_expert(ref.shared_experts, mlx.shared_experts, rng, inter, dim)
 
     x = (rng.standard_normal((2, 3, dim)) * 0.5).astype(np.float32)
