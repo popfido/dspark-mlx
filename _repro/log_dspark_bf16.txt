@@ -1,11 +1,0 @@
-Fetching 7 files:   0%|          | 0/7 [00:00<?, ?it/s]Fetching 7 files: 100%|██████████| 7/7 [00:00<00:00, 32550.03it/s]
-  [dspark bf16] gsm8k     drafts=7 tau=5.67 acc=66.7% x1.85
-  [dspark bf16] humaneval drafts=7 tau=6.64 acc=80.6% x2.05
-  [dspark bf16] mtbench   drafts=7 tau=2.95 acc=27.9% x0.93
-wrote /Users/Fido/workspace/dspark-mlx/_repro/cmp_dspark_bf16.json
-Exception ignored in: <function ResourceTracker.__del__ at 0xe78c1f9c0>
-Traceback (most recent call last):
-  File "/Users/Fido/workspace/omlx/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 80, in __del__
-  File "/Users/Fido/workspace/omlx/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 89, in _stop
-  File "/Users/Fido/workspace/omlx/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 102, in _stop_locked
-AttributeError: '_thread.RLock' object has no attribute '_recursion_count'

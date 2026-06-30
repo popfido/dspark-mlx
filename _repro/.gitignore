@@ -1,0 +1,8 @@
+# Scratch experiment outputs — the findings live in ../BENCHMARK.md (and git history).
+__pycache__/
+*.pyc
+log_*.txt
+cmp_*.json
+
+# Third-party reference source downloaded only as a parity oracle (not vendored).
+mtp_ref/
