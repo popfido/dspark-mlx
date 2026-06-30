@@ -1,0 +1,60 @@
+{
+  "native": {
+    "drafter": "MTP assistant (q8, native blk-4)",
+    "rows": {
+      "gsm8k": {
+        "domain": "math",
+        "drafts": 2.966500000000001,
+        "tau": 3.4429000000000003,
+        "accept_rate": 82.35,
+        "speedup": 1.4385,
+        "n": 20
+      },
+      "humaneval": {
+        "domain": "code",
+        "drafts": 2.9835000000000003,
+        "tau": 3.7255000000000003,
+        "accept_rate": 91.33,
+        "speedup": 1.5114999999999998,
+        "n": 20
+      },
+      "mtbench": {
+        "domain": "chat",
+        "drafts": 2.9799999999999995,
+        "tau": 2.5355,
+        "accept_rate": 51.53000000000001,
+        "speedup": 1.0695000000000001,
+        "n": 20
+      }
+    }
+  },
+  "unified": {
+    "drafter": "MTP assistant (q8, depth-matched)",
+    "rows": {
+      "gsm8k": {
+        "domain": "math",
+        "drafts": 6.8165,
+        "tau": 5.5725999999999996,
+        "accept_rate": 67.025,
+        "speedup": 1.939,
+        "n": 20
+      },
+      "humaneval": {
+        "domain": "code",
+        "drafts": 6.845999999999999,
+        "tau": 6.491750000000001,
+        "accept_rate": 80.27,
+        "speedup": 2.162,
+        "n": 20
+      },
+      "mtbench": {
+        "domain": "chat",
+        "drafts": 6.827,
+        "tau": 3.0155,
+        "accept_rate": 29.55999999999999,
+        "speedup": 1.1435,
+        "n": 20
+      }
+    }
+  }
+}

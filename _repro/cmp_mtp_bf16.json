@@ -1,0 +1,60 @@
+{
+  "native": {
+    "drafter": "MTP assistant (bf16, native blk-4)",
+    "rows": {
+      "gsm8k": {
+        "domain": "math",
+        "drafts": 2.9665000000000004,
+        "tau": 3.4509999999999996,
+        "accept_rate": 82.63000000000001,
+        "speedup": 1.4335,
+        "n": 20
+      },
+      "humaneval": {
+        "domain": "code",
+        "drafts": 2.984,
+        "tau": 3.7214000000000005,
+        "accept_rate": 91.19,
+        "speedup": 1.573,
+        "n": 20
+      },
+      "mtbench": {
+        "domain": "chat",
+        "drafts": 2.9774999999999996,
+        "tau": 2.5263,
+        "accept_rate": 51.260000000000005,
+        "speedup": 1.1404999999999998,
+        "n": 20
+      }
+    }
+  },
+  "unified": {
+    "drafter": "MTP assistant (bf16, depth-matched)",
+    "rows": {
+      "gsm8k": {
+        "domain": "math",
+        "drafts": 6.8135,
+        "tau": 5.63305,
+        "accept_rate": 67.96000000000001,
+        "speedup": 2.039,
+        "n": 20
+      },
+      "humaneval": {
+        "domain": "code",
+        "drafts": 6.8485,
+        "tau": 6.5104500000000005,
+        "accept_rate": 80.50500000000001,
+        "speedup": 2.3165,
+        "n": 20
+      },
+      "mtbench": {
+        "domain": "chat",
+        "drafts": 6.8205,
+        "tau": 3.01205,
+        "accept_rate": 29.529999999999994,
+        "speedup": 1.1875,
+        "n": 20
+      }
+    }
+  }
+}

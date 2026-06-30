@@ -1,0 +1,18 @@
+Loading target google/gemma-4-12b-it (cached) ...
+Fetching 7 files:   0%|          | 0/7 [00:00<?, ?it/s]Fetching 7 files: 100%|██████████| 7/7 [00:00<00:00, 11687.95it/s]
+Loading drafter mlx-community/gemma-4-12B-it-assistant-bf16 ...
+Fetching 6 files:   0%|          | 0/6 [00:00<?, ?it/s]Fetching 6 files: 100%|██████████| 6/6 [00:00<00:00, 15505.74it/s]
+  drafter resolved kind = 'mtp'
+  [mtp blk=native] gsm8k     drafts=3.0 tau=3.44 acc=82.3% x1.44
+  [mtp blk=native] humaneval drafts=3.0 tau=3.73 acc=91.3% x1.51
+  [mtp blk=native] mtbench   drafts=3.0 tau=2.54 acc=51.5% x1.07
+  [mtp blk=8] gsm8k     drafts=6.8 tau=5.57 acc=67.0% x1.94
+  [mtp blk=8] humaneval drafts=6.8 tau=6.49 acc=80.3% x2.16
+  [mtp blk=8] mtbench   drafts=6.8 tau=3.02 acc=29.6% x1.14
+wrote /Users/Fido/workspace/dspark-mlx/_repro/cmp_mtp_q8.json
+Exception ignored in: <function ResourceTracker.__del__ at 0xe57dc47c0>
+Traceback (most recent call last):
+  File "/Users/Fido/workspace/omlx/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 80, in __del__
+  File "/Users/Fido/workspace/omlx/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 89, in _stop
+  File "/Users/Fido/workspace/omlx/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 102, in _stop_locked
+AttributeError: '_thread.RLock' object has no attribute '_recursion_count'
