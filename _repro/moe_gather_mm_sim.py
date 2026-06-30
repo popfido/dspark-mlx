@@ -102,6 +102,25 @@ def sparse_moe(x, Wg, Wu, Wd, gate_w, sw, topk, limit, sort=False):
     return y + shared(x, sw, limit)
 
 
+def quantize_stack(W, bits, gs=64):
+    """mx.quantize each [E, out, in] stack along the in dim -> (w_q, scales, biases)."""
+    return mx.quantize(W, group_size=gs, bits=bits)
+
+
+def sparse_moe_q(x, q1, q3, q2, gate_w, sw, topk, limit, bits, gs=64, sort=False):
+    """Quantized optimized path: gather_qmm over only the top-k routed experts (q8/q4)."""
+    w, idx = route(x, gate_w, topk)
+    xe = mx.expand_dims(x, (-2, -3))
+    kw = dict(rhs_indices=idx, transpose=True, group_size=gs, bits=bits, sorted_indices=sort)
+    g = mx.gather_qmm(xe, *q1, **kw)          # [N,topk,1,inter]
+    u = mx.gather_qmm(xe, *q3, **kw)
+    h = _expert_act(g, u, limit).astype(x.dtype)
+    o = mx.gather_qmm(h, *q2, **kw)           # [N,topk,1,dim]
+    o = o.squeeze(-2).astype(mx.float32)
+    y = mx.sum(o * mx.expand_dims(w, -1), axis=-2)
+    return y + shared(x, sw, limit)
+
+
 def _time(fn, iters=20):
     fn(); mx.eval(fn())  # warmup + compile
     t0 = time.perf_counter()
@@ -124,23 +143,42 @@ def parity_check():
     return rel < 1e-4
 
 
+def _relerr(a, b):
+    return float(mx.max(mx.abs(a - b))) / (float(mx.max(mx.abs(a))) + 1e-9)
+
+
 def perf(dtype, Ms, iters):
     print(f"\n=== DeepSeek-V4 draft MoE perf | dim={DIM} inter={INTER} experts={N_EXPERTS} "
           f"top-{TOPK} | dtype={dtype} ===")
     Wg, Wu, Wd, gw, sw = make_weights(DIM, INTER, N_EXPERTS, dtype, key_seed=2)
     mx.eval(Wg, Wu, Wd, gw, *sw)
-    print(f"  {'M (tokens)':>10} {'dense ms':>9} {'sparse ms':>10} {'speedup':>8} {'parity rel':>11}")
+    # quantized expert stacks (the real DeepSeek-V4 draft ships fp8/fp4 experts)
+    q8 = [quantize_stack(W, 8) for W in (Wg, Wu, Wd)]
+    q4 = [quantize_stack(W, 4) for W in (Wg, Wu, Wd)]
+    mx.eval(q8, q4)
+    bytes_bf16 = sum(W.nbytes for W in (Wg, Wu, Wd))
+    bytes_q8 = sum(t.nbytes for q in q8 for t in q)
+    bytes_q4 = sum(t.nbytes for q in q4 for t in q)
+    print(f"  expert mem: bf16 {bytes_bf16/1e9:.1f}GB | q8 {bytes_q8/1e9:.1f}GB "
+          f"({bytes_bf16/bytes_q8:.1f}x) | q4 {bytes_q4/1e9:.1f}GB ({bytes_bf16/bytes_q4:.1f}x)")
+    print(f"  {'M':>4} | {'dense':>7} | {'mm ms':>6} {'x':>5} {'err':>7} | "
+          f"{'q8 ms':>6} {'x':>5} {'err':>7} | {'q4 ms':>6} {'x':>5} {'err':>7}")
     for M in Ms:
         x = mx.array(np.random.default_rng(M).standard_normal((M, DIM)).astype(np.float32)).astype(dtype)
         mx.eval(x)
         d = dense_moe(x, Wg, Wu, Wd, gw, sw, TOPK, LIMIT)
         s = sparse_moe(x, Wg, Wu, Wd, gw, sw, TOPK, LIMIT)
-        mx.eval(d, s)
-        rel = float(mx.max(mx.abs(d - s))) / (float(mx.max(mx.abs(d))) + 1e-9)
-        dense_ms = _time(lambda: dense_moe(x, Wg, Wu, Wd, gw, sw, TOPK, LIMIT), iters)
-        sparse_ms = _time(lambda: sparse_moe(x, Wg, Wu, Wd, gw, sw, TOPK, LIMIT), iters)
-        print(f"  {M:>10} {dense_ms:>9.2f} {sparse_ms:>10.2f} {dense_ms / sparse_ms:>7.1f}x "
-              f"{rel:>11.1e}", flush=True)
+        s8 = sparse_moe_q(x, q8[0], q8[1], q8[2], gw, sw, TOPK, LIMIT, 8)
+        s4 = sparse_moe_q(x, q4[0], q4[1], q4[2], gw, sw, TOPK, LIMIT, 4)
+        mx.eval(d, s, s8, s4)
+        e_mm, e8, e4 = _relerr(d, s), _relerr(d, s8), _relerr(d, s4)
+        t_d = _time(lambda: dense_moe(x, Wg, Wu, Wd, gw, sw, TOPK, LIMIT), iters)
+        t_mm = _time(lambda: sparse_moe(x, Wg, Wu, Wd, gw, sw, TOPK, LIMIT), iters)
+        t8 = _time(lambda: sparse_moe_q(x, q8[0], q8[1], q8[2], gw, sw, TOPK, LIMIT, 8), iters)
+        t4 = _time(lambda: sparse_moe_q(x, q4[0], q4[1], q4[2], gw, sw, TOPK, LIMIT, 4), iters)
+        print(f"  {M:>4} | {t_d:>7.1f} | {t_mm:>6.2f} {t_d/t_mm:>4.0f}x {e_mm:>7.1e} | "
+              f"{t8:>6.2f} {t_d/t8:>4.0f}x {e8:>7.1e} | {t4:>6.2f} {t_d/t4:>4.0f}x {e4:>7.1e}",
+              flush=True)
 
 
 def main():
